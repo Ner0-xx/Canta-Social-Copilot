@@ -159,7 +159,7 @@ export async function uploadDraftImage(draftId: number, file: File): Promise<Con
 }
 
 export function publishManual(draftId: number): Promise<ContentDraftData> {
-  return request<ContentDraft>(`/api/content/drafts/${draftId}/publish-manual`, {
+  return request<ContentDraftData>(`/api/content/drafts/${draftId}/publish-manual`, {
     method: "POST",
   });
 }

@@ -1,13 +1,12 @@
-import { BarChart3, Upload, FileText, CheckCircle2, Beaker, TrendingUp } from "lucide-react";
+import { BarChart3, Upload } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { request, getExperiments, getWeeklyReports } from "../lib/api";
-import type { AABExperimentData, WeeklyReportData } from "../types";
+import type { AABExperimentData } from "../types";
 
 export function AnalyticsWorkspace() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "experiments">("dashboard");
   const [dashboard, setDashboard] = useState<any>(null);
   const [experiments, setExperiments] = useState<AABExperimentData[]>([]);
-  const [reports, setReports] = useState<WeeklyReportData[]>([]);
   const [recentPosts, setRecentPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -21,8 +20,7 @@ export function AnalyticsWorkspace() {
       setRecentPosts(posts);
       const exps = await getExperiments();
       setExperiments(exps);
-      const reps = await getWeeklyReports();
-      setReports(reps);
+      await getWeeklyReports();
     } catch (err) {
       console.error("Failed to load analytics", err);
     } finally {
@@ -44,7 +42,6 @@ export function AnalyticsWorkspace() {
 
     setUploadStatus("Uploading...");
     try {
-      // Direct fetch for FormData
       const response = await fetch("http://127.0.0.1:8000/api/analytics/import/csv", {
         method: "POST",
         body: formData,
@@ -58,26 +55,25 @@ export function AnalyticsWorkspace() {
     } catch (err) {
       setUploadStatus("Error uploading file.");
     }
-    
-    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleManualSave = async () => {
-    // Collect inputs
-    const entries = recentPosts.map(post => ({
+    const entries = recentPosts.map((post) => ({
       platform_post_id: post.platform_post_id,
       platform: "x",
       impressions: post.metrics.impressions,
       reactions: post.metrics.reactions,
       comments: post.metrics.comments,
       reposts: post.metrics.reposts,
-      clicks: 0
+      clicks: 0,
     }));
 
     try {
       await request("/api/analytics/import/manual", {
         method: "POST",
-        body: JSON.stringify(entries)
+        body: JSON.stringify(entries),
       });
       alert("Manual entries saved!");
       await fetchDashboard();
@@ -115,123 +111,171 @@ export function AnalyticsWorkspace() {
           </div>
         </div>
 
-        {/* High Level Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <p className="text-sm font-medium text-gray-500 mb-1">Total Impressions</p>
-            <h3 className="text-3xl font-bold text-gray-900">{dashboard?.total_impressions?.toLocaleString() || 0}</h3>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <p className="text-sm font-medium text-gray-500 mb-1">Total Engagements</p>
-            <h3 className="text-3xl font-bold text-gray-900">{dashboard?.total_reactions?.toLocaleString() || 0}</h3>
-          </div>
+        <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm mb-8">
+          <button
+            type="button"
+            onClick={() => setActiveTab("dashboard")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              activeTab === "dashboard" ? "bg-indigo-600 text-white" : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("experiments")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              activeTab === "experiments" ? "bg-indigo-600 text-white" : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Experiments
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Top Posts */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <h2 className="text-lg font-bold mb-4">Top Performing Content</h2>
-            <div className="space-y-4">
-              {dashboard?.top_posts?.length === 0 ? (
-                <p className="text-gray-500 text-sm">No data yet.</p>
-              ) : (
-                dashboard?.top_posts?.map((post: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100">
-                    <div className="flex-1 min-w-0 pr-4">
-                      <p className="text-sm font-medium text-gray-900 truncate">{post.title}</p>
-                      <span className="text-xs text-gray-500 capitalize">{post.platform}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold">{post.impressions?.toLocaleString()} views</p>
-                      <p className="text-xs text-gray-500">{post.reactions?.toLocaleString()} likes</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Import CSV */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
-            <div>
-              <h2 className="text-lg font-bold mb-2">Import CSV Analytics</h2>
-              <p className="text-sm text-gray-500 mb-6">Upload your raw data exports from LinkedIn or X Premium to automatically populate your dashboard and inform your AI Strategy Engine.</p>
-            </div>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
-              <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <div className="flex justify-center text-sm text-gray-600">
-                <label className="relative cursor-pointer rounded-md bg-white font-semibold text-blue-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-600 focus-within:ring-offset-2 hover:text-blue-500">
-                  <span>Upload a file</span>
-                  <input ref={fileInputRef} type="file" className="sr-only" accept=".csv" onChange={handleFileUpload} />
-                </label>
-                <p className="pl-1">or drag and drop</p>
+        {activeTab === "dashboard" && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500 mb-1">Total Impressions</p>
+                <h3 className="text-3xl font-bold text-gray-900">{dashboard?.total_impressions?.toLocaleString() || 0}</h3>
               </div>
-              <p className="text-xs text-gray-500 mt-2">CSV up to 10MB</p>
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500 mb-1">Total Engagements</p>
+                <h3 className="text-3xl font-bold text-gray-900">{dashboard?.total_reactions?.toLocaleString() || 0}</h3>
+              </div>
             </div>
-            {uploadStatus && (
-              <p className={`mt-4 text-sm font-medium ${uploadStatus.includes("Success") ? 'text-green-600' : 'text-blue-600'}`}>
-                {uploadStatus}
-              </p>
-            )}
-          </div>
-        </div>
 
-        {/* Manual X Entry Grid */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">X (Twitter) Manual Log</h2>
-              <p className="text-sm text-gray-500">Quickly log impressions and likes for recent X posts if you don't have X Premium.</p>
-            </div>
-            <button 
-              onClick={handleManualSave}
-              className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800 shadow-sm"
-            >
-              Save Entries
-            </button>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-500">
-              <thead className="bg-white text-xs uppercase text-gray-700 border-b">
-                <tr>
-                  <th className="px-6 py-4 font-medium">Post Title</th>
-                  <th className="px-6 py-4 font-medium">Published Date</th>
-                  <th className="px-6 py-4 font-medium">Views</th>
-                  <th className="px-6 py-4 font-medium">Likes</th>
-                  <th className="px-6 py-4 font-medium">Comments</th>
-                  <th className="px-6 py-4 font-medium">Reposts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentPosts.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">No recent X posts found to log.</td></tr>
-                ) : (
-                  recentPosts.map((post, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="px-6 py-4 font-medium text-gray-900 max-w-[200px] truncate">{post.title}</td>
-                      <td className="px-6 py-4">{new Date(post.published_at).toLocaleDateString()}</td>
-                      <td className="px-6 py-4">
-                        <input type="number" className="w-20 border rounded p-1 text-sm" value={post.metrics.impressions || ''} onChange={(e) => handleMetricChange(idx, 'impressions', e.target.value)} placeholder="0" />
-                      </td>
-                      <td className="px-6 py-4">
-                        <input type="number" className="w-20 border rounded p-1 text-sm" value={post.metrics.reactions || ''} onChange={(e) => handleMetricChange(idx, 'reactions', e.target.value)} placeholder="0" />
-                      </td>
-                      <td className="px-6 py-4">
-                        <input type="number" className="w-20 border rounded p-1 text-sm" value={post.metrics.comments || ''} onChange={(e) => handleMetricChange(idx, 'comments', e.target.value)} placeholder="0" />
-                      </td>
-                      <td className="px-6 py-4">
-                        <input type="number" className="w-20 border rounded p-1 text-sm" value={post.metrics.reposts || ''} onChange={(e) => handleMetricChange(idx, 'reposts', e.target.value)} placeholder="0" />
-                      </td>
-                    </tr>
-                  ))
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                <h2 className="text-lg font-bold mb-4">Top Performing Content</h2>
+                <div className="space-y-4">
+                  {dashboard?.top_posts?.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No data yet.</p>
+                  ) : (
+                    dashboard?.top_posts?.map((post: any, i: number) => (
+                      <div key={i} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <p className="text-sm font-medium text-gray-900 truncate">{post.title}</p>
+                          <span className="text-xs text-gray-500 capitalize">{post.platform}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold">{post.impressions?.toLocaleString()} views</p>
+                          <p className="text-xs text-gray-500">{post.reactions?.toLocaleString()} likes</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+                <div>
+                  <h2 className="text-lg font-bold mb-2">Import CSV Analytics</h2>
+                  <p className="text-sm text-gray-500 mb-6">Upload your raw data exports from LinkedIn or X Premium to automatically populate your dashboard and inform your AI Strategy Engine.</p>
+                </div>
+
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
+                  <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                  <div className="flex justify-center text-sm text-gray-600">
+                    <label className="relative cursor-pointer rounded-md bg-white font-semibold text-blue-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-600 focus-within:ring-offset-2 hover:text-blue-500">
+                      <span>Upload a file</span>
+                      <input ref={fileInputRef} type="file" className="sr-only" accept=".csv" onChange={handleFileUpload} />
+                    </label>
+                    <p className="pl-1">or drag and drop</p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">CSV up to 10MB</p>
+                </div>
+                {uploadStatus && (
+                  <p className={`mt-4 text-sm font-medium ${uploadStatus.includes("Success") ? "text-green-600" : "text-blue-600"}`}>
+                    {uploadStatus}
+                  </p>
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        </>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">X (Twitter) Manual Log</h2>
+                  <p className="text-sm text-gray-500">Quickly log impressions and likes for recent X posts if you don't have X Premium.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleManualSave}
+                  className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800 shadow-sm"
+                >
+                  Save Entries
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-500">
+                  <thead className="bg-white text-xs uppercase text-gray-700 border-b">
+                    <tr>
+                      <th className="px-6 py-4 font-medium">Post Title</th>
+                      <th className="px-6 py-4 font-medium">Published Date</th>
+                      <th className="px-6 py-4 font-medium">Views</th>
+                      <th className="px-6 py-4 font-medium">Likes</th>
+                      <th className="px-6 py-4 font-medium">Comments</th>
+                      <th className="px-6 py-4 font-medium">Reposts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentPosts.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                          No recent X posts found to log.
+                        </td>
+                      </tr>
+                    ) : (
+                      recentPosts.map((post, idx) => (
+                        <tr key={idx} className="border-b hover:bg-gray-50">
+                          <td className="px-6 py-4 font-medium text-gray-900 max-w-[200px] truncate">{post.title}</td>
+                          <td className="px-6 py-4">{new Date(post.published_at).toLocaleDateString()}</td>
+                          <td className="px-6 py-4">
+                            <input
+                              type="number"
+                              className="w-20 border rounded p-1 text-sm"
+                              value={post.metrics.impressions || ""}
+                              onChange={(e) => handleMetricChange(idx, "impressions", e.target.value)}
+                              placeholder="0"
+                            />
+                          </td>
+                          <td className="px-6 py-4">
+                            <input
+                              type="number"
+                              className="w-20 border rounded p-1 text-sm"
+                              value={post.metrics.reactions || ""}
+                              onChange={(e) => handleMetricChange(idx, "reactions", e.target.value)}
+                              placeholder="0"
+                            />
+                          </td>
+                          <td className="px-6 py-4">
+                            <input
+                              type="number"
+                              className="w-20 border rounded p-1 text-sm"
+                              value={post.metrics.comments || ""}
+                              onChange={(e) => handleMetricChange(idx, "comments", e.target.value)}
+                              placeholder="0"
+                            />
+                          </td>
+                          <td className="px-6 py-4">
+                            <input
+                              type="number"
+                              className="w-20 border rounded p-1 text-sm"
+                              value={post.metrics.reposts || ""}
+                              onChange={(e) => handleMetricChange(idx, "reposts", e.target.value)}
+                              placeholder="0"
+                            />
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         )}
 
         {activeTab === "experiments" && (
@@ -242,7 +286,7 @@ export function AnalyticsWorkspace() {
                 <p className="text-gray-500 text-sm">No active A/B experiments.</p>
               ) : (
                 <div className="grid gap-6">
-                  {experiments.map(exp => (
+                  {experiments.map((exp) => (
                     <div key={exp.id} className="border border-gray-200 rounded-xl p-6">
                       <div className="flex justify-between items-start mb-4">
                         <div>
@@ -253,7 +297,7 @@ export function AnalyticsWorkspace() {
                           {exp.status.toUpperCase()}
                         </span>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-4">
                         {Object.entries(exp.metrics || {}).map(([variant, metrics]: [string, any]) => (
                           <div key={variant} className="bg-gray-50 rounded-lg p-4">
@@ -273,7 +317,6 @@ export function AnalyticsWorkspace() {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

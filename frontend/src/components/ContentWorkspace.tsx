@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, Copy, FilePenLine, ShieldCheck, Image as ImageIcon } from "lucide-react";
-import { useEffect, useState, useRef } from "react";
+import { AlertTriangle, CheckCircle2, Copy, ShieldCheck, Image as ImageIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { CalendarDays, Send } from "lucide-react";
 import { checkDraftQuality, getDrafts, updateDraftStatus, scheduleDraft, publishManual, updateDraft, uploadDraftImage, getExperiments } from "../lib/api";
 import type { ContentDraftData, AABExperimentData } from "../types";
@@ -13,7 +13,6 @@ export function ContentWorkspace() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editBody, setEditBody] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingId, setUploadingId] = useState<number | null>(null);
   const [experiments, setExperiments] = useState<AABExperimentData[]>([]);
   const [editExperimentId, setEditExperimentId] = useState<number | undefined>();
