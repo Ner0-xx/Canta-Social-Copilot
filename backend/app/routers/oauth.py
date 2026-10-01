@@ -5,11 +5,14 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.models import OAuthConnection
 from app.schemas import OAuthConnectionData
 from app.services.linkedin import LinkedInService
 from app.services.x_service import XService
+
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +47,8 @@ def oauth_login(platform: str, request: Request):
     if platform not in ["linkedin", "x"]:
         raise HTTPException(status_code=400, detail="Unsupported platform")
         
-    redirect_uri = str(request.url_for("oauth_callback", platform=platform))
+    backend_base_url = settings.backend_base_url.rstrip("/")
+    redirect_uri = f"{backend_base_url}/api/oauth/{platform}/callback"
     state = "xyz123"
     
     if platform == "linkedin":
@@ -69,18 +73,21 @@ async def oauth_callback(
     error_description: str = Query(None),
     session: Session = Depends(get_db)
 ):
+    frontend_origin = settings.frontend_origin.split(",")[0].strip().rstrip("/")
+
     if error:
         logger.error(f"OAuth error: {error} - {error_description}")
-        return RedirectResponse(f"http://127.0.0.1:5173/settings?error={error}")
+        return RedirectResponse(f"{frontend_origin}/settings?error={error}")
 
     if not code:
-        return RedirectResponse("http://127.0.0.1:5173/settings?error=no_code")
+        return RedirectResponse(f"{frontend_origin}/settings?error=no_code")
 
     if platform not in ["linkedin", "x"]:
         raise HTTPException(status_code=400, detail="Unsupported platform")
 
-    redirect_uri = str(request.url_for("oauth_callback", platform=platform))
-    
+    backend_base_url = settings.backend_base_url.rstrip("/")
+    redirect_uri = f"{backend_base_url}/api/oauth/{platform}/callback"
+
     try:
         if platform == "linkedin":
             linkedin = LinkedInService()
@@ -96,7 +103,7 @@ async def oauth_callback(
             x_svc = XService()
             verifier = pkce_store.pop(state, None)
             if not verifier:
-                return RedirectResponse("http://127.0.0.1:5173/settings?error=pkce_missing")
+                return RedirectResponse(f"{frontend_origin}/settings?error=pkce_missing")
                 
             token_data = await x_svc.exchange_code_for_token(code, redirect_uri, verifier)
             access_token = token_data.get("access_token")
@@ -118,7 +125,7 @@ async def oauth_callback(
         
         session.commit()
         
-        return RedirectResponse("http://127.0.0.1:5173/settings?success=1")
+        return RedirectResponse(f"{frontend_origin}/settings?success=1")
     except Exception as e:
         logger.error(f"Failed to exchange token: {e}")
-        return RedirectResponse("http://127.0.0.1:5173/settings?error=token_exchange_failed")
+        return RedirectResponse(f"{frontend_origin}/settings?error=token_exchange_failed")

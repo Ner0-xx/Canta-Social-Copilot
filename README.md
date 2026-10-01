@@ -114,35 +114,43 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173` in your browser.
+Open `http://127.0.0.1:5173` in your browser for local development.
 
 ### Environment Configuration
 
-**Backend** (`.env` in project root):
+This project supports both local development and deployed hosting. Use the split below:
+
+- Backend values go into `.env.example`
+- Frontend values go in .env.local.example`
+
+**Backend** (`.env.example`):
 
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | Supabase PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL connection string for Supabase or your deployed database |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_KEY` | Supabase anon/public key |
 | `SUPABASE_JWT_SECRET` | Supabase JWT signing secret |
-| `FRONTEND_ORIGIN` | Frontend URL for CORS |
+| `BACKEND_BASE_URL` | Public base URL of the FastAPI backend, e.g. `http://127.0.0.1:8000` or your Render URL |
+| `FRONTEND_ORIGIN` | Frontend origin used for CORS and redirect handling, e.g. `http://127.0.0.1:5173` or your Vercel URL |
 | `INFERENCE_PROVIDER` | AI provider (`openai_compatible`) |
 | `INFERENCE_BASE_URL` | Groq API base URL |
 | `INFERENCE_API_KEY` | Your Groq API key |
-| `INFERENCE_MODEL` | Model name (e.g. `llama3-8b-8192`) |
+| `INFERENCE_MODEL` | Model name (e.g. `gpt-oss-120b`) |
 | `LINKEDIN_CLIENT_ID` | LinkedIn OAuth app client ID |
 | `LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth app client secret |
 | `X_CLIENT_ID` | X OAuth app client ID |
 | `X_CLIENT_SECRET` | X OAuth app client secret |
 
-**Frontend** (`frontend/.env.local`):
+**Frontend** (`.env.local.example`):
 
 | Variable | Description |
 |---|---|
 | `VITE_SUPABASE_URL` | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key |
-| `VITE_API_URL` | Backend API URL (e.g. `http://127.0.0.1:8000` or Render URL) |
+| `VITE_API_URL` | Backend API base URL, e.g. `http://127.0.0.1:8000` or your Render backend URL |
+
+> OAuth callbacks use the backend public URL and the frontend origin configured in the backend env values.
 
 ## 🛡️ Safety Model
 
@@ -158,12 +166,16 @@ Canta Social Copilot is designed with safety as a core principle:
 
 ## 📦 Deployment
 
+This project is designed to run on a cloud deployment stack while still supporting local development:
+
 | Component | Recommended Host |
 |---|---|
 | Frontend | [Vercel](https://vercel.com) |
 | Backend | [Render](https://render.com) |
 | Database | [Supabase](https://supabase.com) |
 | AI Engine | [Groq](https://groq.com) |
+
+For deployed use, set the backend `BACKEND_BASE_URL` and `FRONTEND_ORIGIN` to the live Render and Vercel URLs respectively, and point `VITE_API_URL` in the frontend to the deployed backend URL.
 
 ## 📄 License
 

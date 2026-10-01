@@ -4,6 +4,8 @@ import { CalendarDays, Send } from "lucide-react";
 import { checkDraftQuality, getDrafts, updateDraftStatus, scheduleDraft, publishManual, updateDraft, uploadDraftImage, getExperiments } from "../lib/api";
 import type { ContentDraftData, AABExperimentData } from "../types";
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+
 export function ContentWorkspace() {
   const [drafts, setDrafts] = useState<ContentDraftData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,7 +255,7 @@ export function ContentWorkspace() {
                     {draft.image_path && (
                       <div className="mt-4 mb-2 rounded-lg overflow-hidden border border-gray-200">
                         <img 
-                          src={`http://127.0.0.1:8000${draft.image_path}`} 
+                          src={`${API_BASE_URL}${draft.image_path}`} 
                           alt="Draft attachment" 
                           className="w-full object-cover max-h-64"
                         />

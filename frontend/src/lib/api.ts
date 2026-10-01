@@ -11,7 +11,7 @@ import type {
 
 import { supabase } from "./supabase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -146,7 +146,7 @@ export async function uploadDraftImage(draftId: number, file: File): Promise<Con
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`/api/content/drafts/${draftId}/image`, {
+  const response = await fetch(`${API_BASE_URL}/api/content/drafts/${draftId}/image`, {
     method: "POST",
     body: formData,
   });
@@ -186,8 +186,7 @@ export function getOAuthStatus(platform: string): Promise<any> {
 }
 
 export function connectOAuth(platform: string): void {
-  // We navigate directly to the backend login endpoint which redirects to the provider
-  window.location.href = `http://127.0.0.1:8000/api/oauth/${platform}/login`;
+  window.location.href = `${API_BASE_URL}/api/oauth/${platform}/login`;
 }
 
 export function getExperiments(): Promise<AABExperimentData[]> {

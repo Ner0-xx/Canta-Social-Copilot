@@ -36,13 +36,14 @@ export function AnalyticsWorkspace() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
     const formData = new FormData();
     formData.append("file", file);
     formData.append("platform", "linkedin");
 
     setUploadStatus("Uploading...");
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/analytics/import/csv", {
+      const response = await fetch(`${apiBaseUrl}/api/analytics/import/csv`, {
         method: "POST",
         body: formData,
       });
