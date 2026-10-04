@@ -42,7 +42,9 @@ const releaseLevels: Array<{ value: ReleaseLevel; label: string }> = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"strategy" | "sources" | "ideas" | "content" | "calendar" | "engagement" | "analytics" | "settings">("strategy");
+  const [activeTab, setActiveTab] = useState<"strategy" | "sources" | "ideas" | "content" | "calendar" | "engagement" | "analytics" | "settings">(() =>
+    window.location.pathname.replace(/\/$/, "") === "/settings" ? "settings" : "strategy",
+  );
   const [strategy, setStrategy] = useState<Strategy>(emptyStrategy);
   const [settings, setSettings] = useState<AppSettings>({
     release_level: "observe",
