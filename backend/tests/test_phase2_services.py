@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -114,3 +115,23 @@ def test_disconnect_oauth_requires_auth_and_removes_connection(client: TestClien
         assert status_response.json()["connected"] is False
     finally:
         client.app.dependency_overrides[verify_jwt] = auth_override
+
+
+def test_oauth_status_keeps_saved_connection_visible_when_token_expires(client: TestClient):
+    session_generator = client.app.dependency_overrides[get_db]()
+    session = next(session_generator)
+    session.add(
+        OAuthConnection(
+            platform="linkedin",
+            account_name="example",
+            encrypted_tokens="token",
+            expires_at=datetime.now() - timedelta(hours=1),
+        )
+    )
+    session.commit()
+    session_generator.close()
+
+    response = client.get("/api/oauth/linkedin/status")
+    assert response.status_code == 200
+    assert response.json()["connected"] is True
+    assert response.json()["token_expired"] is True

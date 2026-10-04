@@ -7,16 +7,25 @@ export function SettingsWorkspace() {
   const [linkedinStatus, setLinkedinStatus] = useState<OAuthConnectionData | null>(null);
   const [xStatus, setXStatus] = useState<OAuthConnectionData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [statusError, setStatusError] = useState(false);
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   const [urlMessage, setUrlMessage] = useState<{type: "success" | "error", text: string} | null>(null);
 
   const refreshStatuses = async () => {
-    const [li, x] = await Promise.all([
+    const [li, x] = await Promise.allSettled([
       getOAuthStatus("linkedin"),
       getOAuthStatus("x"),
     ]);
-    setLinkedinStatus(li);
-    setXStatus(x);
+    setLinkedinStatus(li.status === "fulfilled" ? li.value : null);
+    setXStatus(x.status === "fulfilled" ? x.value : null);
+    setStatusError(li.status === "rejected" || x.status === "rejected");
+  };
+
+  const handleRefreshStatuses = async () => {
+    setRefreshingStatus(true);
+    await refreshStatuses();
+    setRefreshingStatus(false);
   };
 
   const handleDisconnect = async (platform: "linkedin" | "x") => {
@@ -54,13 +63,8 @@ export function SettingsWorkspace() {
     }
 
     const checkStatus = async () => {
-      try {
-        await refreshStatuses();
-      } catch (err) {
-        console.error("Failed to fetch OAuth status", err);
-      } finally {
-        setLoading(false);
-      }
+      await refreshStatuses();
+      setLoading(false);
     };
 
     void checkStatus();
@@ -98,6 +102,20 @@ export function SettingsWorkspace() {
           </div>
         )}
 
+        {statusError && (
+          <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <span>We couldn’t verify one or more account connections. Your connection may still be saved.</span>
+            <button
+              type="button"
+              onClick={() => void handleRefreshStatuses()}
+              disabled={refreshingStatus}
+              className="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+            >
+              {refreshingStatus ? "Checking..." : "Check again"}
+            </button>
+          </div>
+        )}
+
         <div className="space-y-6">
           <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
             <h2 className="text-xl font-bold mb-4 border-b pb-2">Social Integrations</h2>
@@ -119,7 +137,11 @@ export function SettingsWorkspace() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
                         <CheckCircle2 size={14} /> Connected
                       </span>
-                      {linkedinStatus.expires_at && <span className="text-xs text-gray-500">Active until {new Date(linkedinStatus.expires_at).toLocaleDateString()}</span>}
+                      {linkedinStatus.token_expired ? (
+                        <span className="text-xs font-medium text-amber-800">Access expired; reconnect to publish</span>
+                      ) : linkedinStatus.expires_at ? (
+                        <span className="text-xs text-gray-500">Access active until {new Date(linkedinStatus.expires_at).toLocaleDateString()}</span>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -136,6 +158,8 @@ export function SettingsWorkspace() {
                     <Unlink size={16} />
                     <span>{disconnectingPlatform === "linkedin" ? "Disconnecting..." : "Disconnect"}</span>
                   </button>
+                ) : linkedinStatus === null && statusError ? (
+                  <span className="text-sm font-medium text-amber-800">Status unavailable</span>
                 ) : (
                   <button 
                     onClick={() => connectOAuth("linkedin")}
@@ -164,7 +188,11 @@ export function SettingsWorkspace() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
                         <CheckCircle2 size={14} /> Connected
                       </span>
-                      {xStatus.expires_at && <span className="text-xs text-gray-500">Active until {new Date(xStatus.expires_at).toLocaleDateString()}</span>}
+                      {xStatus.token_expired ? (
+                        <span className="text-xs font-medium text-amber-800">Access expired; reconnect to publish</span>
+                      ) : xStatus.expires_at ? (
+                        <span className="text-xs text-gray-500">Access active until {new Date(xStatus.expires_at).toLocaleDateString()}</span>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -181,6 +209,8 @@ export function SettingsWorkspace() {
                     <Unlink size={16} />
                     <span>{disconnectingPlatform === "x" ? "Disconnecting..." : "Disconnect"}</span>
                   </button>
+                ) : xStatus === null && statusError ? (
+                  <span className="text-sm font-medium text-amber-800">Status unavailable</span>
                 ) : (
                   <button 
                     onClick={() => connectOAuth("x")}

@@ -27,6 +27,7 @@ class OAuthStatusResponse(BaseModel):
     platform: str
     account_name: str | None = None
     expires_at: datetime | None = None
+    token_expired: bool = False
 
 @router.get("/{platform}/status", response_model=OAuthStatusResponse)
 def get_oauth_status(platform: str, session: Session = Depends(get_db)):
@@ -34,13 +35,17 @@ def get_oauth_status(platform: str, session: Session = Depends(get_db)):
     if not conn:
         return OAuthStatusResponse(connected=False, platform=platform)
         
-    is_expired = conn.expires_at and conn.expires_at < datetime.now(timezone.utc).replace(tzinfo=None)
+    is_expired = bool(
+        conn.expires_at
+        and conn.expires_at < datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     
     return OAuthStatusResponse(
-        connected=not is_expired,
+        connected=True,
         platform=platform,
         account_name=conn.account_name,
-        expires_at=conn.expires_at
+        expires_at=conn.expires_at,
+        token_expired=is_expired,
     )
 
 @router.delete("/{platform}")
