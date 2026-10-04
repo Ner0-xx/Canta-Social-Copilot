@@ -7,6 +7,8 @@ import type {
   Strategy,
   AABExperimentData,
   WeeklyReportData,
+  OAuthConnectionData,
+  ScheduledJob,
 } from "../types";
 
 import { supabase } from "./supabase";
@@ -164,25 +166,31 @@ export function publishManual(draftId: number): Promise<ContentDraftData> {
   });
 }
 
-export function getScheduledJobs(): Promise<any[]> {
-  return request<any[]>("/api/schedule");
+export function getScheduledJobs(): Promise<ScheduledJob[]> {
+  return request<ScheduledJob[]>("/api/schedule");
 }
 
-export function scheduleDraft(draftId: number, platform: string, scheduledAt: string): Promise<any> {
-  return request<any>("/api/schedule", {
+export function scheduleDraft(draftId: number, platform: string, scheduledAt: string): Promise<ScheduledJob> {
+  return request<ScheduledJob>("/api/schedule", {
     method: "POST",
     body: JSON.stringify({ draft_id: draftId, platform, scheduled_at: scheduledAt }),
   });
 }
 
-export function cancelScheduledJob(jobId: number): Promise<any> {
-  return request<any>(`/api/schedule/${jobId}`, {
+export function cancelScheduledJob(jobId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/api/schedule/${jobId}`, {
     method: "DELETE",
   });
 }
 
-export function getOAuthStatus(platform: string): Promise<any> {
-  return request<any>(`/api/oauth/${platform}/status`);
+export function getOAuthStatus(platform: string): Promise<OAuthConnectionData> {
+  return request<OAuthConnectionData>(`/api/oauth/${platform}/status`);
+}
+
+export function disconnectOAuth(platform: string): Promise<{ disconnected: boolean; platform: string }> {
+  return request<{ disconnected: boolean; platform: string }>(`/api/oauth/${platform}`, {
+    method: "DELETE",
+  });
 }
 
 export function connectOAuth(platform: string): void {

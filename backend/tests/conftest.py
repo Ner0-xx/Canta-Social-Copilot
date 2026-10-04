@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # Register all models on Base.metadata
+from app.auth import verify_jwt
 from app.db import Base, get_db
 from app.main import app
 
@@ -28,6 +29,7 @@ def client() -> TestClient:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[verify_jwt] = lambda: {"sub": "test-user"}
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

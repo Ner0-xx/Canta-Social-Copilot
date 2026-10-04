@@ -1,28 +1,32 @@
 import { BarChart3, Upload } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
-import { request, getExperiments, getWeeklyReports } from "../lib/api";
-import type { AABExperimentData } from "../types";
+import { request, getExperiments } from "../lib/api";
+import type {
+  AABExperimentData,
+  AnalyticsDashboardData,
+  RecentPublicationData,
+  RecentPublicationMetrics,
+} from "../types";
 
 export function AnalyticsWorkspace() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "experiments">("dashboard");
-  const [dashboard, setDashboard] = useState<any>(null);
+  const [dashboard, setDashboard] = useState<AnalyticsDashboardData | null>(null);
   const [experiments, setExperiments] = useState<AABExperimentData[]>([]);
-  const [recentPosts, setRecentPosts] = useState<any[]>([]);
+  const [recentPosts, setRecentPosts] = useState<RecentPublicationData[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDashboard = async () => {
     try {
-      const data = await request<any>("/api/analytics/dashboard");
+      const data = await request<AnalyticsDashboardData>("/api/analytics/dashboard");
       setDashboard(data);
-      const posts = await request<any[]>("/api/analytics/recent-publications?platform=x");
+      const posts = await request<RecentPublicationData[]>("/api/analytics/recent-publications?platform=x");
       setRecentPosts(posts);
       const exps = await getExperiments();
       setExperiments(exps);
-      await getWeeklyReports();
-    } catch (err) {
-      console.error("Failed to load analytics", err);
+    } catch (error) {
+      console.error("Failed to load analytics", error);
     } finally {
       setLoading(false);
     }
@@ -53,7 +57,7 @@ export function AnalyticsWorkspace() {
       } else {
         setUploadStatus("Failed to upload.");
       }
-    } catch (err) {
+    } catch {
       setUploadStatus("Error uploading file.");
     }
 
@@ -78,15 +82,17 @@ export function AnalyticsWorkspace() {
       });
       alert("Manual entries saved!");
       await fetchDashboard();
-    } catch (err) {
+    } catch {
       alert("Failed to save entries");
     }
   };
 
-  const handleMetricChange = (index: number, field: string, value: string) => {
-    const updated = [...recentPosts];
-    updated[index].metrics[field] = parseInt(value) || 0;
-    setRecentPosts(updated);
+  const handleMetricChange = (index: number, field: keyof RecentPublicationMetrics, value: string) => {
+    setRecentPosts((posts) => posts.map((post, postIndex) =>
+      postIndex === index
+        ? { ...post, metrics: { ...post.metrics, [field]: Number.parseInt(value, 10) || 0 } }
+        : post,
+    ));
   };
 
   if (loading) {
@@ -153,7 +159,7 @@ export function AnalyticsWorkspace() {
                   {dashboard?.top_posts?.length === 0 ? (
                     <p className="text-gray-500 text-sm">No data yet.</p>
                   ) : (
-                    dashboard?.top_posts?.map((post: any, i: number) => (
+                    dashboard?.top_posts?.map((post, i) => (
                       <div key={i} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100">
                         <div className="flex-1 min-w-0 pr-4">
                           <p className="text-sm font-medium text-gray-900 truncate">{post.title}</p>
@@ -300,7 +306,7 @@ export function AnalyticsWorkspace() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        {Object.entries(exp.metrics || {}).map(([variant, metrics]: [string, any]) => (
+                        {Object.entries(exp.metrics || {}).map(([variant, metrics]) => (
                           <div key={variant} className="bg-gray-50 rounded-lg p-4">
                             <h4 className="font-semibold text-gray-900 mb-2 border-b pb-2">Variant {variant}</h4>
                             <div className="space-y-1 text-sm">

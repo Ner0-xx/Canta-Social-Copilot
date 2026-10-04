@@ -2,6 +2,9 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
+from app.auth import verify_jwt
+from app.db import get_db
+from app.models import OAuthConnection
 from app.services.ingestion import compute_content_hash
 from app.services.llm import LLMService
 from app.services.quality import evaluate_draft_quality
@@ -85,3 +88,29 @@ def test_idea_and_draft_generation_api(client: TestClient):
     check_resp = client.post(f"/api/content/drafts/{draft_id}/check")
     assert check_resp.status_code == 200
     assert "score" in check_resp.json()
+
+
+def test_disconnect_oauth_requires_auth_and_removes_connection(client: TestClient):
+    session_generator = client.app.dependency_overrides[get_db]()
+    session = next(session_generator)
+    session.add(OAuthConnection(platform="x", account_name="example", encrypted_tokens="token"))
+    session.commit()
+    session_generator.close()
+
+    auth_override = client.app.dependency_overrides.pop(verify_jwt)
+    try:
+        unauthorized = client.delete("/api/oauth/x")
+        assert unauthorized.status_code == 401
+    finally:
+        client.app.dependency_overrides[verify_jwt] = auth_override
+
+    try:
+        response = client.delete("/api/oauth/x", headers={"Authorization": "Bearer test-token"})
+        assert response.status_code == 200
+        assert response.json() == {"disconnected": True, "platform": "x"}
+
+        status_response = client.get("/api/oauth/x/status")
+        assert status_response.status_code == 200
+        assert status_response.json()["connected"] is False
+    finally:
+        client.app.dependency_overrides[verify_jwt] = auth_override

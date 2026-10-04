@@ -1,19 +1,51 @@
-import { Settings, Linkedin, CheckCircle2, AlertCircle } from "lucide-react";
+import { Settings, Linkedin, CheckCircle2, AlertCircle, Unlink } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getOAuthStatus, connectOAuth } from "../lib/api";
+import { getOAuthStatus, connectOAuth, disconnectOAuth } from "../lib/api";
 import type { OAuthConnectionData } from "../types";
 
 export function SettingsWorkspace() {
   const [linkedinStatus, setLinkedinStatus] = useState<OAuthConnectionData | null>(null);
   const [xStatus, setXStatus] = useState<OAuthConnectionData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   const [urlMessage, setUrlMessage] = useState<{type: "success" | "error", text: string} | null>(null);
+
+  const refreshStatuses = async () => {
+    const [li, x] = await Promise.all([
+      getOAuthStatus("linkedin"),
+      getOAuthStatus("x"),
+    ]);
+    setLinkedinStatus(li);
+    setXStatus(x);
+  };
+
+  const handleDisconnect = async (platform: "linkedin" | "x") => {
+    const platformName = platform === "linkedin" ? "LinkedIn" : "X";
+    if (!window.confirm(`Disconnect your ${platformName} account from this app?`)) return;
+
+    setDisconnectingPlatform(platform);
+    setUrlMessage(null);
+    try {
+      await disconnectOAuth(platform);
+      await refreshStatuses();
+      setUrlMessage({ type: "success", text: `${platformName} has been disconnected from this app.` });
+    } catch (err) {
+      setUrlMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : `Could not disconnect ${platformName}.`,
+      });
+    } finally {
+      setDisconnectingPlatform(null);
+    }
+  };
 
   useEffect(() => {
     // Check URL for OAuth callback messages
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("success")) {
-      setUrlMessage({ type: "success", text: "Successfully connected to LinkedIn!" });
+      const platform = urlParams.get("platform");
+      const platformName = platform === "x" ? "X" : "LinkedIn";
+      setUrlMessage({ type: "success", text: `${platformName} connected successfully.` });
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (urlParams.get("error")) {
@@ -23,12 +55,7 @@ export function SettingsWorkspace() {
 
     const checkStatus = async () => {
       try {
-        const [li, x] = await Promise.all([
-          getOAuthStatus("linkedin"),
-          getOAuthStatus("x")
-        ]);
-        setLinkedinStatus(li);
-        setXStatus(x);
+        await refreshStatuses();
       } catch (err) {
         console.error("Failed to fetch OAuth status", err);
       } finally {
@@ -65,7 +92,7 @@ export function SettingsWorkspace() {
         </div>
 
         {urlMessage && (
-          <div className={`mb-6 p-4 rounded-lg flex items-center gap-2 ${urlMessage.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+          <div role="status" className={`mb-6 p-4 rounded-lg flex items-center gap-2 border ${urlMessage.type === "success" ? "bg-green-50 text-green-800 border-green-200" : "bg-red-50 text-red-800 border-red-200"}`}>
             {urlMessage.type === "success" ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
             <span>{urlMessage.text}</span>
           </div>
@@ -87,25 +114,27 @@ export function SettingsWorkspace() {
                       ? `Connected as ${linkedinStatus.account_name || "LinkedIn User"}` 
                       : "Connect your LinkedIn account to publish posts directly."}
                   </p>
-                  {linkedinStatus?.connected && linkedinStatus.expires_at && (
-                     <div className="flex items-center gap-1.5 mt-2">
-                       <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                       <p className="text-xs font-medium text-green-700">
-                         Active until {new Date(linkedinStatus.expires_at).toLocaleDateString()}
-                       </p>
-                     </div>
+                  {linkedinStatus?.connected && (
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
+                        <CheckCircle2 size={14} /> Connected
+                      </span>
+                      {linkedinStatus.expires_at && <span className="text-xs text-gray-500">Active until {new Date(linkedinStatus.expires_at).toLocaleDateString()}</span>}
+                    </div>
                   )}
                 </div>
               </div>
               
               <div>
                 {linkedinStatus?.connected ? (
-                  <button 
-                    className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg font-medium shadow-sm cursor-default"
-                    disabled
+                  <button
+                    type="button"
+                    onClick={() => void handleDisconnect("linkedin")}
+                    disabled={disconnectingPlatform !== null}
+                    className="flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-700 rounded-lg font-medium hover:bg-red-50 disabled:opacity-60 disabled:cursor-wait transition-colors"
                   >
-                    <CheckCircle2 size={18} />
-                    <span>Connected</span>
+                    <Unlink size={16} />
+                    <span>{disconnectingPlatform === "linkedin" ? "Disconnecting..." : "Disconnect"}</span>
                   </button>
                 ) : (
                   <button 
@@ -130,25 +159,27 @@ export function SettingsWorkspace() {
                       ? `Connected as ${xStatus.account_name || "X User"}` 
                       : "Connect your X account to publish posts directly."}
                   </p>
-                  {xStatus?.connected && xStatus.expires_at && (
-                     <div className="flex items-center gap-1.5 mt-2">
-                       <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                       <p className="text-xs font-medium text-green-700">
-                         Active until {new Date(xStatus.expires_at).toLocaleDateString()}
-                       </p>
-                     </div>
+                  {xStatus?.connected && (
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
+                        <CheckCircle2 size={14} /> Connected
+                      </span>
+                      {xStatus.expires_at && <span className="text-xs text-gray-500">Active until {new Date(xStatus.expires_at).toLocaleDateString()}</span>}
+                    </div>
                   )}
                 </div>
               </div>
               
               <div>
                 {xStatus?.connected ? (
-                  <button 
-                    className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg font-medium shadow-sm cursor-default"
-                    disabled
+                  <button
+                    type="button"
+                    onClick={() => void handleDisconnect("x")}
+                    disabled={disconnectingPlatform !== null}
+                    className="flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-700 rounded-lg font-medium hover:bg-red-50 disabled:opacity-60 disabled:cursor-wait transition-colors"
                   >
-                    <CheckCircle2 size={18} />
-                    <span>Connected</span>
+                    <Unlink size={16} />
+                    <span>{disconnectingPlatform === "x" ? "Disconnecting..." : "Disconnect"}</span>
                   </button>
                 ) : (
                   <button 

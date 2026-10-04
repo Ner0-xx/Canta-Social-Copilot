@@ -84,7 +84,7 @@ export function ContentWorkspace() {
       setNotice({ type: "success", text: "Draft updated successfully." });
       setEditingId(null);
       await loadDrafts();
-    } catch (err) {
+    } catch {
       setNotice({ type: "error", text: "Failed to update draft." });
     }
   };
@@ -104,7 +104,7 @@ export function ContentWorkspace() {
       setNotice({ type: "success", text: "Draft scheduled successfully." });
       setScheduleTime("");
       await loadDrafts();
-    } catch (err) {
+    } catch {
       setNotice({ type: "error", text: "Failed to schedule draft." });
     }
   };
@@ -114,7 +114,7 @@ export function ContentWorkspace() {
       await publishManual(draftId);
       setNotice({ type: "success", text: "Draft marked as manually published." });
       await loadDrafts();
-    } catch (err) {
+    } catch {
       setNotice({ type: "error", text: "Failed to publish manually." });
     }
   };
@@ -125,7 +125,7 @@ export function ContentWorkspace() {
       await uploadDraftImage(draftId, file);
       setNotice({ type: "success", text: "Image uploaded successfully." });
       await loadDrafts();
-    } catch (err) {
+    } catch {
       setNotice({ type: "error", text: "Failed to upload image." });
     } finally {
       setUploadingId(null);

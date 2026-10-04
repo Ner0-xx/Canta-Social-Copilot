@@ -1,9 +1,10 @@
 import { MessageSquare, Bot, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { request } from "../lib/api";
+import type { DraftReplyData, EngagementInboxItem } from "../types";
 
 export function EngagementWorkspace() {
-  const [inbox, setInbox] = useState<any[]>([]);
+  const [inbox, setInbox] = useState<EngagementInboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [draftingId, setDraftingId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -11,7 +12,7 @@ export function EngagementWorkspace() {
   useEffect(() => {
     const fetchInbox = async () => {
       try {
-        const data = await request<any[]>("/api/engagement/inbox");
+        const data = await request<EngagementInboxItem[]>("/api/engagement/inbox");
         setInbox(data);
       } catch (err) {
         console.error("Failed to load inbox", err);
@@ -22,10 +23,10 @@ export function EngagementWorkspace() {
     void fetchInbox();
   }, []);
 
-  const handleDraftReply = async (comment: any) => {
+  const handleDraftReply = async (comment: EngagementInboxItem) => {
     setDraftingId(comment.id);
     try {
-      const response = await request<any>("/api/engagement/draft-reply", {
+      const response = await request<DraftReplyData>("/api/engagement/draft-reply", {
         method: "POST",
         body: JSON.stringify({
           comment_content: comment.content,
@@ -34,7 +35,7 @@ export function EngagementWorkspace() {
         })
       });
       setDrafts(prev => ({...prev, [comment.id]: response.draft_reply}));
-    } catch (err) {
+    } catch {
       alert("Failed to draft reply");
     } finally {
       setDraftingId(null);

@@ -1,14 +1,15 @@
 import logging
 from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth import verify_jwt
 from app.config import get_settings
 from app.db import get_db
 from app.models import OAuthConnection
-from app.schemas import OAuthConnectionData
 from app.services.linkedin import LinkedInService
 from app.services.x_service import XService
 
@@ -41,6 +42,22 @@ def get_oauth_status(platform: str, session: Session = Depends(get_db)):
         account_name=conn.account_name,
         expires_at=conn.expires_at
     )
+
+@router.delete("/{platform}")
+def disconnect_oauth(
+    platform: str,
+    session: Session = Depends(get_db),
+    _user=Depends(verify_jwt),
+):
+    if platform not in ["linkedin", "x"]:
+        raise HTTPException(status_code=400, detail="Unsupported platform")
+
+    connection = session.query(OAuthConnection).filter_by(platform=platform).first()
+    if connection:
+        session.delete(connection)
+        session.commit()
+
+    return {"disconnected": True, "platform": platform}
 
 @router.get("/{platform}/login")
 def oauth_login(platform: str, request: Request):
@@ -125,7 +142,7 @@ async def oauth_callback(
         
         session.commit()
         
-        return RedirectResponse(f"{frontend_origin}/settings?success=1")
+        return RedirectResponse(f"{frontend_origin}/settings?success=1&platform={platform}")
     except Exception as e:
         logger.error(f"Failed to exchange token: {e}")
         return RedirectResponse(f"{frontend_origin}/settings?error=token_exchange_failed")

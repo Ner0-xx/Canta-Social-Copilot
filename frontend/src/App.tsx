@@ -24,7 +24,7 @@ import { StrategyWorkspace } from "./components/StrategyWorkspace";
 import { AnalyticsWorkspace } from "./components/AnalyticsWorkspace";
 import { EngagementWorkspace } from "./components/EngagementWorkspace";
 import { Login } from "./components/Login";
-import { useAuth } from "./components/AuthContext";
+import { useAuth } from "./components/auth-context";
 import { getSettings, getStrategy, saveSettings, saveStrategy } from "./lib/api";
 import {
   emptyStrategy,

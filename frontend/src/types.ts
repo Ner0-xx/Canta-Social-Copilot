@@ -141,8 +141,54 @@ export interface ScheduledJob {
   platform: string;
   scheduled_at: string;
   status: string;
-  execution_log: Record<string, any>;
+  execution_log: Record<string, unknown>;
   created_at: string;
+}
+
+export interface AnalyticsTopPost {
+  platform_post_id: string;
+  platform: string;
+  title: string;
+  impressions: number;
+  reactions: number;
+}
+
+export interface AnalyticsDashboardData {
+  total_impressions: number;
+  total_reactions: number;
+  top_posts: AnalyticsTopPost[];
+  pillar_performance: Array<{
+    name: string;
+    impressions: number;
+    reactions: number;
+  }>;
+}
+
+export interface RecentPublicationMetrics {
+  impressions: number;
+  reactions: number;
+  comments: number;
+  reposts: number;
+}
+
+export interface RecentPublicationData {
+  platform_post_id: string;
+  platform: string;
+  title: string;
+  published_at: string;
+  metrics: RecentPublicationMetrics;
+}
+
+export interface EngagementInboxItem {
+  id: string;
+  platform: string;
+  author: string;
+  content: string;
+  post_title: string;
+}
+
+export interface DraftReplyData {
+  draft_reply: string;
 }
 
 export interface OAuthConnectionData {
