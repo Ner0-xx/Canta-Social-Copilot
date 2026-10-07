@@ -137,10 +137,12 @@ This is where you manage account connections.
 
 You can:
 
-- connect LinkedIn
-- connect X
-- check OAuth status
+- connect or disconnect LinkedIn and X individually
+- see a clear connected/not-connected badge and the connected account name
+- check OAuth status and access-token expiry
 - review callback results and errors
+
+Disconnecting removes that platform's saved connection from this app; it does not delete or change your social account.
 
 ---
 
