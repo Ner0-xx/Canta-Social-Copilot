@@ -25,6 +25,7 @@ import { StrategyWorkspace } from "./components/StrategyWorkspace";
 import { AnalyticsWorkspace } from "./components/AnalyticsWorkspace";
 import { EngagementWorkspace } from "./components/EngagementWorkspace";
 import { DirectMessagesWorkspace } from "./components/DirectMessagesWorkspace";
+import { Brand } from "./components/Brand";
 import { Login } from "./components/Login";
 import { useAuth } from "./components/auth-context";
 import { getSettings, getStrategy, saveSettings, saveStrategy } from "./lib/api";
@@ -143,11 +144,7 @@ export default function App() {
     <div className="app-shell">
       <aside className={mobileNavOpen ? "sidebar open" : "sidebar"}>
         <div className="brand-mark">
-          <div className="brand-icon">C♪</div>
-          <div>
-            <strong>C✦nta</strong>
-            <span>Social Copilot</span>
-          </div>
+          <Brand />
           <button
             className="icon-button mobile-close"
             type="button"

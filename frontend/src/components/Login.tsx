@@ -1,5 +1,6 @@
 import { ArrowRight, Eye, EyeOff, LockKeyhole, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { Brand } from "./Brand";
 import { supabase } from "../lib/supabase";
 
 export function Login() {
@@ -36,8 +37,7 @@ export function Login() {
       <section className="login-card" aria-label="Sign in to Canta Social Copilot">
         <div className="login-showcase">
           <div className="login-brand">
-            <span className="login-brand-mark" aria-hidden="true">C</span>
-            <span>Canta<span className="login-brand-light">Social Copilot</span></span>
+            <Brand variant="login" />
           </div>
 
           <div className="login-showcase-copy">
@@ -73,8 +73,7 @@ export function Login() {
         <div className="login-form-panel">
           <div className="login-form-heading">
             <div className="login-mobile-brand">
-              <span className="login-brand-mark" aria-hidden="true">C</span>
-              <strong>Canta</strong>
+              <Brand variant="mobile" />
             </div>
             <span className="login-welcome">WELCOME BACK</span>
             <h2>Sign in to your workspace</h2>

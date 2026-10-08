@@ -1,120 +1,303 @@
-import { CalendarDays, Loader2, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Layers3,
+  Sparkles,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { cancelScheduledJob, getScheduledJobs } from "../lib/api";
 import type { ScheduledJob } from "../types";
 
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function jobDate(job: ScheduledJob) {
+  return new Date(job.scheduled_at);
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Time unavailable"
+    : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function CalendarWorkspace() {
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
+  const [month, setMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()));
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   const fetchJobs = async () => {
-    setLoading(true);
+    setError(null);
     try {
-      const data = await getScheduledJobs();
-      setJobs(data);
-    } catch (err) {
-      console.error(err);
+      setJobs(await getScheduledJobs());
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not load your scheduled content.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchJobs();
+    void fetchJobs();
   }, []);
 
+  const monthCells = useMemo(() => {
+    const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+    const mondayOffset = (firstDay.getDay() + 6) % 7;
+    const gridStart = new Date(firstDay);
+    gridStart.setDate(firstDay.getDate() - mondayOffset);
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart);
+      date.setDate(gridStart.getDate() + index);
+      return date;
+    });
+  }, [month]);
+
+  const jobsByDate = useMemo(() => {
+    const grouped = new Map<string, ScheduledJob[]>();
+    jobs.forEach((job) => {
+      const key = dateKey(jobDate(job));
+      grouped.set(key, [...(grouped.get(key) ?? []), job]);
+    });
+    return grouped;
+  }, [jobs]);
+
+  const selectedJobs = useMemo(
+    () =>
+      [...(jobsByDate.get(selectedDate) ?? [])].sort(
+        (left, right) => jobDate(left).getTime() - jobDate(right).getTime(),
+      ),
+    [jobsByDate, selectedDate],
+  );
+  const pendingCount = jobs.filter((job) => job.status === "pending").length;
+  const thisMonthCount = jobs.filter((job) => {
+    const date = jobDate(job);
+    return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
+  }).length;
+
+  const shiftMonth = (amount: number) => {
+    setMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
+  };
+
   const handleCancel = async (id: number) => {
+    setCancellingId(id);
+    setError(null);
     try {
       await cancelScheduledJob(id);
       await fetchJobs();
-    } catch (err) {
-      console.error(err);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not cancel this scheduled post.",
+      );
+    } finally {
+      setCancellingId(null);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-50 text-gray-500">
-        <Loader2 className="w-8 h-8 animate-spin" />
+      <div className="calendar-loading" role="status">
+        <span className="spinner large" />
+        <span>Opening your publishing calendar...</span>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 text-gray-900 flex flex-col items-center">
-      <div className="w-full max-w-4xl p-8">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="p-3 bg-blue-100 text-blue-600 rounded-xl shadow-sm">
-            <CalendarDays className="w-8 h-8" />
+    <div className="calendar-workspace">
+      <header className="calendar-hero">
+        <div className="calendar-hero-copy">
+          <span className="calendar-kicker"><CalendarDays size={14} /> THE PUBLISHING RHYTHM</span>
+          <h1>Make room for <em>what’s next.</em></h1>
+          <p>A considered view of what is queued, when it goes live, and what’s coming up.</p>
+        </div>
+        <div className="calendar-hero-stats">
+          <div>
+            <span className="calendar-stat-icon"><Layers3 size={16} /></span>
+            <strong>{pendingCount}</strong>
+            <span>in the queue</span>
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-              Content Calendar
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">
-              Review and manage your scheduled content
-            </p>
+            <span className="calendar-stat-icon mint"><CalendarDays size={16} /></span>
+            <strong>{thisMonthCount}</strong>
+            <span>this month</span>
           </div>
         </div>
+        <div className="calendar-hero-moon" aria-hidden="true">
+          <span className="calendar-moon-ring ring-a" />
+          <span className="calendar-moon-ring ring-b" />
+          <span className="calendar-moon-core" />
+          <span className="calendar-moon-star star-a">✦</span>
+          <span className="calendar-moon-star star-b">✧</span>
+        </div>
+      </header>
 
-        {jobs.length === 0 ? (
-          <div className="p-12 text-center bg-white border border-gray-100 rounded-2xl shadow-sm">
-            <CalendarDays className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No scheduled content.</p>
-            <p className="text-gray-400 text-sm mt-2">
-              Approve and schedule drafts from the Content workspace.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {jobs.map((job) => (
-              <div
-                key={job.id}
-                className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row gap-6 hover:border-blue-200 transition-colors"
+      {error && <div className="calendar-error" role="alert">{error}</div>}
+
+      <div className="calendar-content-grid">
+        <section className="calendar-month-panel" aria-label="Monthly content calendar">
+          <div className="calendar-month-header">
+            <div>
+              <span className="calendar-section-label">YOUR SCHEDULE</span>
+              <h2>{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h2>
+            </div>
+            <div className="calendar-month-controls">
+              <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month">
+                <ArrowLeft size={17} />
+              </button>
+              <button
+                type="button"
+                className="calendar-today-button"
+                onClick={() => {
+                  const today = new Date();
+                  setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                  setSelectedDate(dateKey(today));
+                }}
               >
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold uppercase tracking-wider rounded-full border border-blue-100">
+                Today
+              </button>
+              <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month">
+                <ArrowRight size={17} />
+              </button>
+            </div>
+          </div>
+
+          <div className="calendar-month-grid">
+            {WEEKDAYS.map((day) => (
+              <div className="calendar-weekday" key={day}>{day}</div>
+            ))}
+            {monthCells.map((date) => {
+              const key = dateKey(date);
+              const daysJobs = jobsByDate.get(key) ?? [];
+              const isCurrentMonth = date.getMonth() === month.getMonth();
+              const isToday = key === dateKey(new Date());
+              const isSelected = key === selectedDate;
+              return (
+                <button
+                  className={[
+                    "calendar-day",
+                    !isCurrentMonth && "outside",
+                    isToday && "today",
+                    isSelected && "selected",
+                    daysJobs.length > 0 && "has-events",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={key}
+                  type="button"
+                  aria-label={`${date.toLocaleDateString()}, ${daysJobs.length} scheduled posts`}
+                  aria-pressed={isSelected}
+                  onClick={() => setSelectedDate(key)}
+                >
+                  <span>{date.getDate()}</span>
+                  {daysJobs.length > 0 && (
+                    <span className="calendar-day-dots" aria-hidden="true">
+                      {daysJobs.slice(0, 3).map((job) => (
+                        <i className={`dot-${job.platform.toLowerCase()}`} key={job.id} />
+                      ))}
+                      {daysJobs.length > 3 && <b>+{daysJobs.length - 3}</b>}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="calendar-legend">
+            <span><i className="dot-x" /> X</span>
+            <span><i className="dot-linkedin" /> LinkedIn</span>
+            <span><i className="dot-other" /> Other</span>
+          </div>
+        </section>
+
+        <aside className="calendar-agenda">
+          <div className="calendar-agenda-heading">
+            <div>
+              <span className="calendar-section-label">DAY PLAN</span>
+              <h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}</h2>
+            </div>
+            <span className="calendar-agenda-count">{selectedJobs.length}</span>
+          </div>
+          {selectedJobs.length ? (
+            <div className="calendar-agenda-list">
+              {selectedJobs.map((job, index) => (
+                <article className={`calendar-event-card event-${index % 3}`} key={job.id}>
+                  <div className="calendar-event-time">
+                    <Clock3 size={14} /> {formatTime(job.scheduled_at)}
+                  </div>
+                  <div className="calendar-event-main">
+                    <span className={`calendar-platform-chip ${job.platform.toLowerCase()}`}>
                       {job.platform}
                     </span>
-                    <span
-                      className={`text-sm font-medium ${
-                        job.status === "pending"
-                          ? "text-yellow-600"
-                          : job.status === "completed"
-                          ? "text-green-600"
-                          : job.status === "failed"
-                          ? "text-red-600"
-                          : "text-gray-500"
-                      }`}
-                    >
-                      {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                    <h3>{job.platform === "x" ? "X post" : `${job.platform} post`}</h3>
+                    <p>Draft #{job.draft_id}</p>
+                  </div>
+                  <div className="calendar-event-footer">
+                    <span className={`calendar-status ${job.status}`}>
+                      {job.status === "completed" ? <CheckCircle2 size={13} /> : <span />}
+                      {job.status}
                     </span>
+                    {job.status === "pending" && (
+                      <button
+                        type="button"
+                        className="calendar-cancel-button"
+                        onClick={() => void handleCancel(job.id)}
+                        disabled={cancellingId === job.id}
+                      >
+                        {cancellingId === job.id ? (
+                          <span className="spinner" />
+                        ) : (
+                          <><XCircle size={14} /> Cancel</>
+                        )}
+                      </button>
+                    )}
                   </div>
-                  <div className="text-gray-800 text-lg font-medium">
-                    Scheduled for: {new Date(job.scheduled_at).toLocaleString()}
-                  </div>
-                  <div className="text-sm text-gray-500 mt-2">
-                    Draft ID: {job.draft_id}
-                  </div>
-                </div>
-
-                {job.status === "pending" && (
-                  <div className="flex items-center">
-                    <button
-                      onClick={() => handleCancel(job.id)}
-                      className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium border border-transparent hover:border-red-100"
-                    >
-                      <XCircle className="w-5 h-5" /> Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="calendar-day-empty">
+              <div><CalendarDays size={20} /></div>
+              <strong>A little breathing room.</strong>
+              <span>Nothing is scheduled for this day.</span>
+              <p>Approve and schedule a draft from Content to add it to your rhythm.</p>
+            </div>
+          )}
+        </aside>
       </div>
+
+      {jobs.length === 0 && (
+        <div className="calendar-first-step">
+          <span className="calendar-first-step-icon"><Sparkles size={16} /></span>
+          <span><strong>Your calendar is clear.</strong> When you schedule a post, you’ll find it here.</span>
+        </div>
+      )}
     </div>
   );
 }
