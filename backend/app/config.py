@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
     supabase_jwks_url: str = ""
+    x_refresh_token_encryption_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

@@ -1,9 +1,12 @@
 import base64
 import hashlib
 import os
-import httpx
 from urllib.parse import urlencode
+
+import httpx
+
 from app.config import get_settings
+
 
 class XService:
     def __init__(self):
@@ -36,18 +39,24 @@ class XService:
         }
         return f"https://twitter.com/i/oauth2/authorize?{urlencode(params)}"
 
-    async def exchange_code_for_token(self, code: str, redirect_uri: str, code_verifier: str) -> dict:
-        url = "https://api.twitter.com/2/oauth2/token"
-        
-        # X requires client credentials in Basic Auth header
+    def _token_headers(self) -> dict[str, str]:
         auth_string = f"{self.client_id}:{self.client_secret}"
         b64_auth = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
-        
-        headers = {
+        return {
             "Authorization": f"Basic {b64_auth}",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
         }
-        
+
+    async def _request_token(self, data: dict[str, str]) -> dict:
+        url = "https://api.twitter.com/2/oauth2/token"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, data=data, headers=self._token_headers())
+            resp.raise_for_status()
+            return resp.json()
+
+    async def exchange_code_for_token(
+        self, code: str, redirect_uri: str, code_verifier: str
+    ) -> dict:
         data = {
             "grant_type": "authorization_code",
             "code": code,
@@ -55,10 +64,16 @@ class XService:
             "client_id": self.client_id,
             "code_verifier": code_verifier,
         }
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, data=data, headers=headers)
-            resp.raise_for_status()
-            return resp.json()
+        return await self._request_token(data)
+
+    async def refresh_access_token(self, refresh_token: str) -> dict:
+        return await self._request_token(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": self.client_id,
+            }
+        )
 
     async def get_user_profile(self, access_token: str) -> dict:
         url = "https://api.twitter.com/2/users/me"

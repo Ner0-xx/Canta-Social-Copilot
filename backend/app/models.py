@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -140,7 +140,9 @@ class ContentIdea(Base):
     source_type: Mapped[str] = mapped_column(String(40), default="")
     source_ref: Mapped[str] = mapped_column(String(500), default="")
     pillar_id: Mapped[int | None] = mapped_column(ForeignKey("content_pillars.id"), nullable=True)
-    audience_id: Mapped[int | None] = mapped_column(ForeignKey("audience_segments.id"), nullable=True)
+    audience_id: Mapped[int | None] = mapped_column(
+        ForeignKey("audience_segments.id"), nullable=True
+    )
     relevance_score: Mapped[float] = mapped_column(Float, default=0.0)
     proposed_angle: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -159,7 +161,9 @@ class ContentDraft(Base):
     title: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")
     image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    experiment_id: Mapped[int | None] = mapped_column(ForeignKey("aab_experiments.id"), nullable=True)
+    experiment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("aab_experiments.id"), nullable=True
+    )
     experiment_variant: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
     quality_score: Mapped[float] = mapped_column(Float, default=1.0)
@@ -216,6 +220,7 @@ class OAuthConnection(Base):
     account_name: Mapped[str] = mapped_column(String(120), default="")
     scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
     encrypted_tokens: Mapped[str] = mapped_column(Text, default="")
+    encrypted_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -265,8 +270,9 @@ class WeeklyReport(Base):
     week_end: Mapped[datetime] = mapped_column(DateTime)
     total_impressions: Mapped[int] = mapped_column(Integer, default=0)
     total_reactions: Mapped[int] = mapped_column(Integer, default=0)
-    top_pillar_id: Mapped[int | None] = mapped_column(ForeignKey("content_pillars.id"), nullable=True)
+    top_pillar_id: Mapped[int | None] = mapped_column(
+        ForeignKey("content_pillars.id"), nullable=True
+    )
     top_post_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     insights_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-

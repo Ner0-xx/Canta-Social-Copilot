@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
@@ -11,6 +12,8 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import OAuthConnection
 from app.services.linkedin import LinkedInService
+from app.services.token_crypto import encrypt_refresh_token
+from app.services.x_oauth import refresh_x_connection
 from app.services.x_service import XService
 
 settings = get_settings()
@@ -28,16 +31,20 @@ class OAuthStatusResponse(BaseModel):
     account_name: str | None = None
     expires_at: datetime | None = None
     token_expired: bool = False
+    refresh_token_available: bool = False
 
 @router.get("/{platform}/status", response_model=OAuthStatusResponse)
-def get_oauth_status(platform: str, session: Session = Depends(get_db)):
+def get_oauth_status(
+    platform: str,
+    session: Annotated[Session, Depends(get_db)],
+):
     conn = session.query(OAuthConnection).filter_by(platform=platform).first()
     if not conn:
         return OAuthStatusResponse(connected=False, platform=platform)
         
     is_expired = bool(
         conn.expires_at
-        and conn.expires_at < datetime.now(timezone.utc).replace(tzinfo=None)
+        and conn.expires_at < datetime.now(UTC).replace(tzinfo=None)
     )
     
     return OAuthStatusResponse(
@@ -46,13 +53,50 @@ def get_oauth_status(platform: str, session: Session = Depends(get_db)):
         account_name=conn.account_name,
         expires_at=conn.expires_at,
         token_expired=is_expired,
+        refresh_token_available=bool(conn.encrypted_refresh_token),
     )
+
+
+@router.post("/x/refresh", response_model=OAuthStatusResponse)
+async def refresh_x_oauth(
+    session: Annotated[Session, Depends(get_db)],
+    _user: Annotated[object, Depends(verify_jwt)],
+):
+    connection = (
+        session.query(OAuthConnection)
+        .filter_by(platform="x")
+        .with_for_update()
+        .first()
+    )
+    if not connection:
+        raise HTTPException(status_code=404, detail="No X account is connected.")
+
+    try:
+        await refresh_x_connection(connection, session)
+    except Exception as exc:
+        logger.warning("Failed to refresh X access token: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Could not refresh the X connection. Reconnect X if it does not recover."
+            ),
+        ) from exc
+
+    return OAuthStatusResponse(
+        connected=True,
+        platform="x",
+        account_name=connection.account_name,
+        expires_at=connection.expires_at,
+        token_expired=False,
+        refresh_token_available=bool(connection.encrypted_refresh_token),
+    )
+
 
 @router.delete("/{platform}")
 def disconnect_oauth(
     platform: str,
-    session: Session = Depends(get_db),
-    _user=Depends(verify_jwt),
+    session: Annotated[Session, Depends(get_db)],
+    _user: Annotated[object, Depends(verify_jwt)],
 ):
     if platform not in ["linkedin", "x"]:
         raise HTTPException(status_code=400, detail="Unsupported platform")
@@ -81,7 +125,11 @@ def oauth_login(platform: str, request: Request):
         verifier = x_svc.generate_pkce_verifier()
         challenge = x_svc.generate_pkce_challenge(verifier)
         pkce_store[state] = verifier
-        url = x_svc.get_authorization_url(redirect_uri=redirect_uri, state=state, code_challenge=challenge)
+        url = x_svc.get_authorization_url(
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=challenge,
+        )
         
     return RedirectResponse(url)
 
@@ -89,11 +137,11 @@ def oauth_login(platform: str, request: Request):
 async def oauth_callback(
     platform: str, 
     request: Request,
+    session: Annotated[Session, Depends(get_db)],
     code: str = Query(None), 
     state: str = Query(None),
     error: str = Query(None),
     error_description: str = Query(None),
-    session: Session = Depends(get_db)
 ):
     frontend_origin = settings.frontend_origin.split(",")[0].strip().rstrip("/")
 
@@ -110,6 +158,7 @@ async def oauth_callback(
     backend_base_url = settings.backend_base_url.rstrip("/")
     redirect_uri = f"{backend_base_url}/api/oauth/{platform}/callback"
 
+    encrypted_refresh_token = None
     try:
         if platform == "linkedin":
             linkedin = LinkedInService()
@@ -134,8 +183,17 @@ async def oauth_callback(
             profile = await x_svc.get_user_profile(access_token)
             account_name = profile.get("username", "X User")
             scopes = ["tweet.read", "tweet.write", "users.read", "offline.access"]
+            refresh_token = token_data.get("refresh_token")
+            encrypted_refresh_token = (
+                encrypt_refresh_token(refresh_token) if refresh_token else None
+            )
             
-        conn = session.query(OAuthConnection).filter_by(platform=platform).first()
+        conn = (
+            session.query(OAuthConnection)
+            .filter_by(platform=platform)
+            .with_for_update()
+            .first()
+        )
         if not conn:
             conn = OAuthConnection(platform=platform)
             session.add(conn)
@@ -143,7 +201,11 @@ async def oauth_callback(
         conn.account_name = account_name
         conn.encrypted_tokens = access_token
         conn.scopes = scopes
-        conn.expires_at = datetime.now() + timedelta(seconds=expires_in)
+        conn.expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
+            seconds=expires_in
+        )
+        if platform == "x":
+            conn.encrypted_refresh_token = encrypted_refresh_token
         
         session.commit()
         

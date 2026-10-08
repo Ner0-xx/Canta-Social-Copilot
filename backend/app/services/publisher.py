@@ -1,14 +1,23 @@
+import asyncio
 import logging
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 
-from app.models import ScheduledJob, ContentDraft, PlatformActionRecord, PlatformPublication, AppSettings, OAuthConnection
-from app.policy import evaluate_action, ActionType, PolicyContext, ReleaseLevel
-import asyncio
-from app.services.linkedin import LinkedInService
-from app.services.x_service import XService
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.models import (
+    AppSettings,
+    ContentDraft,
+    OAuthConnection,
+    PlatformActionRecord,
+    PlatformPublication,
+    ScheduledJob,
+)
+from app.policy import ActionType, PolicyContext, ReleaseLevel, evaluate_action
 from app.services.audit import record_audit_event
+from app.services.linkedin import LinkedInService
+from app.services.x_oauth import needs_x_token_refresh, refresh_x_connection
+from app.services.x_service import XService
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +39,7 @@ class PublisherService:
         context = PolicyContext(
             release_level=release_level,
             publishing_enabled=settings.publishing_enabled,
-            approved=True if draft.status == "scheduled" else False,
+            approved=draft.status == "scheduled",
             official_api=True, # Will be true when Phase 4 connects OAuth
             explicit_user_request=False
         )
@@ -39,6 +48,25 @@ class PublisherService:
         if not decision.allowed:
             self._fail_job(job, session, f"Policy block: {decision.reason}")
             return
+
+        if job.platform == "x":
+            connection = (
+                session.query(OAuthConnection)
+                .filter_by(platform="x")
+                .with_for_update()
+                .first()
+            )
+            if connection and needs_x_token_refresh(connection):
+                try:
+                    asyncio.run(refresh_x_connection(connection, session))
+                except Exception as exc:
+                    logger.warning("Unable to refresh X token before publishing: %s", exc)
+                    self._fail_job(
+                        job,
+                        session,
+                        "X token refresh failed. Reconnect the X account and retry.",
+                    )
+                    return
 
         idempotency_key = f"publish_job_{job.id}_v{draft.version}"
         
