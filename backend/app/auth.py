@@ -1,24 +1,47 @@
+from functools import lru_cache
+from typing import Annotated
+
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from app.config import get_settings
 
 security = HTTPBearer()
 
-def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
+
+@lru_cache(maxsize=1)
+def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
+    return jwt.PyJWKClient(jwks_url, cache_jwk_set=True, timeout=5)
+
+
+def verify_jwt(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+):
     settings = get_settings()
-    # If Supabase settings are missing, allow bypass for local dev before cloud deployment
-    if not settings.supabase_jwt_secret:
-        return "local_user"
-        
+    supabase_url = settings.supabase_url.rstrip("/")
+    if not supabase_url:
+        if settings.app_env.lower() == "development":
+            return "local_user"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase JWT verification is not configured",
+        )
+
+    jwks_url = settings.supabase_jwks_url or (
+        f"{supabase_url}/auth/v1/.well-known/jwks.json"
+    )
+    issuer = f"{supabase_url}/auth/v1"
     token = credentials.credentials
+
     try:
-        # Supabase signs tokens with HS256 and the JWT secret
+        signing_key = _get_jwks_client(jwks_url).get_signing_key_from_jwt(token).key
         payload = jwt.decode(
-            token, 
-            settings.supabase_jwt_secret, 
-            algorithms=["HS256"], 
-            options={"verify_aud": False}
+            token,
+            signing_key,
+            algorithms=["ES256"],
+            audience="authenticated",
+            issuer=issuer,
         )
         return payload
     except jwt.ExpiredSignatureError:
@@ -26,10 +49,15 @@ def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expired",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidTokenError as e:
+        ) from None
+    except jwt.PyJWKClientConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to retrieve Supabase signing keys",
+        ) from exc
+    except (jwt.InvalidTokenError, jwt.PyJWKClientError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc

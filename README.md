@@ -130,7 +130,7 @@ This project supports both local development and deployed hosting. Use the split
 | `DATABASE_URL` | PostgreSQL connection string for Supabase or your deployed database |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_KEY` | Supabase anon/public key |
-| `SUPABASE_JWT_SECRET` | Supabase JWT signing secret |
+| `SUPABASE_JWKS_URL` | Optional URL for the Supabase project's public signing keys; defaults to `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`. Backend access tokens must use ES256 (ECC P-256). |
 | `BACKEND_BASE_URL` | Public base URL of the FastAPI backend, e.g. `http://127.0.0.1:8000` or your Render URL |
 | `FRONTEND_ORIGIN` | Frontend origin used for CORS and redirect handling, e.g. `http://127.0.0.1:5173` or your Vercel URL |
 | `INFERENCE_PROVIDER` | AI provider (`openai_compatible`) |
@@ -151,6 +151,8 @@ This project supports both local development and deployed hosting. Use the split
 | `VITE_API_URL` | Backend API base URL, e.g. `http://127.0.0.1:8000` or your Render backend URL |
 
 > OAuth callbacks use the backend public URL and the frontend origin configured in the backend env values.
+
+The backend verifies Supabase access tokens with the project's published ES256 signing keys. Set `SUPABASE_URL` to the same Supabase project used by the frontend. `SUPABASE_JWKS_URL` is normally left blank so the backend derives the project's JWKS endpoint. When deploying this change, remove the obsolete `SUPABASE_JWT_SECRET` variable from Render, set or confirm `SUPABASE_URL`, and redeploy the backend. No frontend auth environment variable changes are required.
 
 ## 🛡️ Safety Model
 

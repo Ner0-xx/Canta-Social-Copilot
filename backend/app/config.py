@@ -3,7 +3,6 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -23,7 +22,7 @@ class Settings(BaseSettings):
     x_client_secret: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
-    supabase_jwt_secret: str = ""
+    supabase_jwks_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
@@ -35,4 +34,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
