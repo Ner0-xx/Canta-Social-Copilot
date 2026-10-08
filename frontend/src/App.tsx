@@ -25,6 +25,7 @@ import { StrategyWorkspace } from "./components/StrategyWorkspace";
 import { AnalyticsWorkspace } from "./components/AnalyticsWorkspace";
 import { EngagementWorkspace } from "./components/EngagementWorkspace";
 import { DirectMessagesWorkspace } from "./components/DirectMessagesWorkspace";
+import { OverviewWorkspace } from "./components/OverviewWorkspace";
 import { Brand } from "./components/Brand";
 import { Login } from "./components/Login";
 import { useAuth } from "./components/auth-context";
@@ -45,8 +46,8 @@ const releaseLevels: Array<{ value: ReleaseLevel; label: string }> = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"strategy" | "sources" | "ideas" | "content" | "calendar" | "engagement" | "inbox" | "analytics" | "settings">(() =>
-    window.location.pathname.replace(/\/$/, "") === "/settings" ? "settings" : "strategy",
+  const [activeTab, setActiveTab] = useState<"overview" | "strategy" | "sources" | "ideas" | "content" | "calendar" | "engagement" | "inbox" | "analytics" | "settings">(() =>
+    window.location.pathname.replace(/\/$/, "") === "/settings" ? "settings" : "overview",
   );
   const [strategy, setStrategy] = useState<Strategy>(emptyStrategy);
   const [settings, setSettings] = useState<AppSettings>({
@@ -156,7 +157,15 @@ export default function App() {
         </div>
 
         <nav className="main-nav">
-          <NavItem icon={<LayoutDashboard size={18} />} label="Overview" disabled />
+          <NavItem
+            icon={<LayoutDashboard size={18} />}
+            label="Overview"
+            active={activeTab === "overview"}
+            onClick={() => {
+              setActiveTab("overview");
+              setMobileNavOpen(false);
+            }}
+          />
           <NavItem
             icon={<ShieldCheck size={18} />}
             label="Strategy"
@@ -318,6 +327,14 @@ export default function App() {
         )}
 
         <main>
+          {activeTab === "overview" && (
+            <OverviewWorkspace
+              onNavigate={(tab) => {
+                setActiveTab(tab);
+                setMobileNavOpen(false);
+              }}
+            />
+          )}
           {activeTab === "strategy" && (
             <StrategyWorkspace
               strategy={strategy}

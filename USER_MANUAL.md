@@ -37,6 +37,18 @@ Before using the app fully, make sure you have:
 
 ## 3. Main Workspace Tabs
 
+### Overview Workspace
+
+Overview is the app’s home screen and daily command center. It brings together:
+
+- LinkedIn and X connection status and the connected account names
+- draft counts for review, approved posts, upcoming scheduled posts, and published posts
+- the next pending scheduled posts and a link to the full calendar
+- a heads-up when drafts have unresolved quality warnings
+- shortcuts to create a post, explore ideas, and add a source
+
+Use Refresh to check the latest workspace data. If a section cannot load, Overview marks that data unavailable rather than treating a failed request as an empty list. Provider access may be expired even when an account is connected; reconnect or refresh access from Settings if publishing is blocked.
+
 ### Strategy Workspace
 
 Use this tab to define your brand profile and content rules.
