@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle2, Linkedin, RefreshCw, Settings, Unlink } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getOAuthStatus, connectOAuth, disconnectOAuth } from "../lib/api";
+import { connectOAuth, disconnectOAuth, getOAuthStatus, refreshXOAuth } from "../lib/api";
 import type { OAuthConnectionData } from "../types";
 
 type Platform = "linkedin" | "x";
@@ -12,6 +12,7 @@ export function SettingsWorkspace() {
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [statusError, setStatusError] = useState(false);
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<Platform | null>(null);
+  const [refreshingX, setRefreshingX] = useState(false);
   const [urlMessage, setUrlMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const refreshStatuses = async () => {
@@ -51,6 +52,24 @@ export function SettingsWorkspace() {
       });
     } finally {
       setDisconnectingPlatform(null);
+    }
+  };
+
+  const handleRefreshX = async () => {
+    setRefreshingX(true);
+    setUrlMessage(null);
+    try {
+      const status = await refreshXOAuth();
+      setXStatus(status);
+      setUrlMessage({ type: "success", text: "X access was refreshed successfully." });
+    } catch (err) {
+      setUrlMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "Could not refresh X access. Reconnect X and try again.",
+      });
+      await refreshStatuses();
+    } finally {
+      setRefreshingX(false);
     }
   };
 
@@ -214,15 +233,38 @@ export function SettingsWorkspace() {
 
                 <div className="settings-account-action">
                   {connected ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleDisconnect(platform)}
-                      disabled={disconnectingPlatform !== null}
-                      className="settings-disconnect-button"
-                    >
-                      <Unlink size={16} aria-hidden="true" />
-                      {isDisconnecting ? "Disconnecting..." : "Disconnect"}
-                    </button>
+                    <>
+                      {platform === "x" && status.token_expired && (
+                        status.refresh_token_available ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleRefreshX()}
+                            disabled={refreshingX || disconnectingPlatform !== null}
+                            className="settings-connect-button x"
+                          >
+                            {refreshingX ? "Refreshing..." : "Refresh access"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => connectOAuth("x")}
+                            disabled={disconnectingPlatform !== null}
+                            className="settings-connect-button x"
+                          >
+                            Reconnect X
+                          </button>
+                        )
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleDisconnect(platform)}
+                        disabled={disconnectingPlatform !== null || refreshingX}
+                        className="settings-disconnect-button"
+                      >
+                        <Unlink size={16} aria-hidden="true" />
+                        {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+                      </button>
+                    </>
                   ) : statusUnavailable ? null : (
                     <button
                       type="button"

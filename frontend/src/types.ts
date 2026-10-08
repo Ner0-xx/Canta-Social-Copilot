@@ -197,6 +197,7 @@ export interface OAuthConnectionData {
   account_name?: string;
   expires_at?: string;
   token_expired?: boolean;
+  refresh_token_available?: boolean;
 }
 
 export interface AABExperimentData {

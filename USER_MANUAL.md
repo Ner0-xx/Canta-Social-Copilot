@@ -182,6 +182,16 @@ If the connection fails, check:
 - the provider callback URL matches the backend route exactly
 - the callback is not pointing to localhost when the app is deployed
 
+### Keeping the X connection active
+
+X access tokens expire, but the app can refresh them when X has issued a refresh token:
+
+- The backend automatically refreshes X credentials shortly before a scheduled publish if they are near expiry.
+- If Settings reports an expired X access token, use **Refresh access** when available.
+- If the refresh token is unavailable or expired, reconnect X and approve the `offline.access` permission.
+
+Before deploying this feature, set `X_REFRESH_TOKEN_ENCRYPTION_KEY` in the backend environment. Generate one with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, store it securely, and keep it unchanged for as long as encrypted tokens are stored. Apply the database migration from the `backend` directory using `alembic upgrade head` before starting the new backend version. Reconnect X once after deployment; existing connections cannot provide a refresh token retroactively.
+
 ---
 
 ## 5. Using the Content Workflow

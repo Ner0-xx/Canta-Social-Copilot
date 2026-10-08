@@ -187,6 +187,12 @@ export function getOAuthStatus(platform: string): Promise<OAuthConnectionData> {
   return request<OAuthConnectionData>(`/api/oauth/${platform}/status`);
 }
 
+export function refreshXOAuth(): Promise<OAuthConnectionData> {
+  return request<OAuthConnectionData>("/api/oauth/x/refresh", {
+    method: "POST",
+  });
+}
+
 export function disconnectOAuth(platform: string): Promise<{ disconnected: boolean; platform: string }> {
   return request<{ disconnected: boolean; platform: string }>(`/api/oauth/${platform}`, {
     method: "DELETE",

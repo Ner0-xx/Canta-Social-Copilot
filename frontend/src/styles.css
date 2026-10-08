@@ -1544,6 +1544,7 @@ select:focus {
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .settings-connect-button,
@@ -1663,6 +1664,8 @@ select:focus {
   .settings-account-action {
     width: 100%;
     padding-left: 54px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .settings-connect-button,

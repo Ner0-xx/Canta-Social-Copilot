@@ -141,6 +141,7 @@ This project supports both local development and deployed hosting. Use the split
 | `LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth app client secret |
 | `X_CLIENT_ID` | X OAuth app client ID |
 | `X_CLIENT_SECRET` | X OAuth app client secret |
+| `X_REFRESH_TOKEN_ENCRYPTION_KEY` | Fernet key used to encrypt X refresh tokens at rest. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and store only in the backend environment. |
 
 **Frontend** (`.env.local.example`):
 
@@ -151,6 +152,8 @@ This project supports both local development and deployed hosting. Use the split
 | `VITE_API_URL` | Backend API base URL, e.g. `http://127.0.0.1:8000` or your Render backend URL |
 
 > OAuth callbacks use the backend public URL and the frontend origin configured in the backend env values.
+
+Before deploying OAuth refresh-token support, set `X_REFRESH_TOKEN_ENCRYPTION_KEY` in the backend environment and run `alembic upgrade head` from the `backend` directory against the configured database. Keep the encryption key stable and backed up: changing or losing it makes saved X refresh tokens unreadable. Then reconnect X once to grant `offline.access` and save a refresh token. Existing X connections do not acquire a refresh token automatically; until reconnected, the app will prompt to reconnect when the access token expires.
 
 The backend verifies Supabase access tokens with the project's published ES256 signing keys. Set `SUPABASE_URL` to the same Supabase project used by the frontend. `SUPABASE_JWKS_URL` is normally left blank so the backend derives the project's JWKS endpoint. When deploying this change, remove the obsolete `SUPABASE_JWT_SECRET` variable from Render, set or confirm `SUPABASE_URL`, and redeploy the backend. No frontend auth environment variable changes are required.
 
