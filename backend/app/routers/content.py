@@ -1,22 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+import asyncio
+import logging
 import os
 import shutil
 import uuid
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc
-import logging
+from datetime import UTC, datetime
+from typing import Annotated
+
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, func, select
+from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import (
+    AppSettings,
     ContentDraft,
     ContentIdea,
-    SourceItem,
+    ContentPillar,
+    OAuthConnection,
     PlatformPublication,
     PostMetric,
-    ContentPillar
+    SourceItem,
 )
+from app.policy import ActionType, PolicyContext, ReleaseLevel, evaluate_action
 from app.routers.strategy import get_strategy
 from app.schemas import (
     ContentDraftCreate,
@@ -27,12 +34,17 @@ from app.schemas import (
     DraftUpdateRequest,
 )
 from app.services.audit import record_audit_event
+from app.services.draft_image import DraftImageError
+from app.services.linkedin import LinkedInService
 from app.services.llm import LLMService
 from app.services.quality import evaluate_draft_quality
+from app.services.x_oauth import XCredentialError, get_valid_x_access_token
+from app.services.x_service import XAPIError, XService
 from app.supabase_client import get_supabase
 
 router = APIRouter(prefix="/content", tags=["content"])
 llm_service = LLMService()
+logger = logging.getLogger(__name__)
 
 VALID_STATUSES = {"idea", "draft", "in_review", "approved", "scheduled", "published", "rejected"}
 
@@ -407,22 +419,102 @@ async def upload_draft_image(
 
 @router.post("/drafts/{draft_id}/publish-manual", response_model=ContentDraftData)
 def publish_manual(
-    draft_id: int, session: Session = Depends(get_db)
+    draft_id: int, session: Annotated[Session, Depends(get_db)]
 ) -> ContentDraft:
     draft = session.get(ContentDraft, draft_id)
     if draft is None:
         raise HTTPException(status_code=404, detail="Draft not found")
 
     if draft.status != "approved":
-        raise HTTPException(status_code=400, detail="Only approved drafts can be published manually")
+        raise HTTPException(
+            status_code=400,
+            detail="Only approved drafts can be published manually",
+        )
+
+    if draft.platform not in {"x", "linkedin"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Manual publishing is supported only for X and LinkedIn.",
+        )
+
+    settings = session.get(AppSettings, 1) or AppSettings(
+        id=1, release_level="observe", publishing_enabled=False
+    )
+    connection = session.query(OAuthConnection).filter_by(platform=draft.platform).first()
+    if not connection or not connection.encrypted_tokens:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Connect {draft.platform.capitalize()} in Settings first.",
+        )
+    decision = evaluate_action(
+        ActionType.API_PUBLISH,
+        PolicyContext(
+            release_level=ReleaseLevel.parse(settings.release_level),
+            publishing_enabled=settings.publishing_enabled,
+            approved=True,
+            official_api=True,
+            explicit_user_request=True,
+        ),
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=decision.reason)
+    try:
+        if draft.platform == "x":
+            access_token = asyncio.run(get_valid_x_access_token(connection, session))
+            platform_post_id = asyncio.run(
+                XService().publish_post(access_token, draft.body, draft.image_path)
+            )
+        else:
+            if not connection.encrypted_tokens:
+                raise HTTPException(
+                    status_code=409, detail="Connect LinkedIn in Settings first."
+                )
+            if connection.expires_at and connection.expires_at <= datetime.now(UTC).replace(
+                tzinfo=None
+            ):
+                raise HTTPException(
+                    status_code=401,
+                    detail="LinkedIn access token expired. Reconnect LinkedIn.",
+                )
+            platform_post_id = asyncio.run(
+                LinkedInService().publish_post(
+                    connection.encrypted_tokens, draft.body, draft.image_path
+                )
+            )
+    except XAPIError as exc:
+        status_code = exc.status_code if exc.status_code in {401, 403, 429} else 502
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        if status_code not in {401, 403, 429}:
+            status_code = 502
+        raise HTTPException(
+            status_code=status_code,
+            detail=f"{draft.platform.capitalize()} rejected the publish request.",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach {draft.platform.capitalize()}. Try again shortly.",
+        ) from exc
+    except XCredentialError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except DraftImageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="The draft image could not be read. Re-upload it and try again.",
+        ) from exc
 
     draft.status = "published"
-    
     pub = PlatformPublication(
         draft_id=draft.id,
         platform=draft.platform,
-        platform_post_id="manual-" + str(draft.id),
-        status="published_manually"
+        platform_post_id=platform_post_id,
+        status="published",
     )
     session.add(pub)
 
@@ -431,8 +523,8 @@ def publish_manual(
         event_type="content.draft.published",
         entity_type="content_draft",
         entity_id=str(draft.id),
-        summary="Draft published manually by user",
-        details={"platform": draft.platform},
+        summary=f"Draft published to {draft.platform}",
+        details={"platform": draft.platform, "post_id": platform_post_id},
     )
     session.commit()
     session.refresh(draft)

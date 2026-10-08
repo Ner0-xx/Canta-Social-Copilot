@@ -88,7 +88,7 @@ You can:
 - attach images
 - approve, reject, or move drafts between review states
 - schedule approved posts
-- manually publish approved posts
+- publish approved posts to the connected X or LinkedIn account
 
 #### Draft lifecycle
 
@@ -100,6 +100,8 @@ A typical content flow:
 4. Draft submitted for review
 5. Approved or rejected
 6. Scheduled or manually published
+
+**Publishing requirements:** manual publishing uses the connected provider’s official API; it does not merely mark a draft as published. The app must have the corresponding account connected, the draft must be approved, the release level must be **Integrate** (or higher), and **Publishing enabled** must be on. A provider error leaves the draft approved so you can correct the issue and retry. Scheduled publishing also uses the official provider publishing services.
 
 #### Quality check
 
@@ -123,13 +125,13 @@ You can:
 
 ### Engagement Workspace
 
-This tab is intended for replying to conversations and drafting engagement responses.
+The Engagement tab fetches up to 20 recent posts and up to 20 recent mentions for the connected X account from X’s user-post and mentions endpoints. Use Refresh to fetch current provider data. Mentions are posts that mention the X account; this is not a complete feed of every comment on all of your posts. AI replies are drafts for review and copying; this screen does not publish replies.
 
-Use it to:
+LinkedIn feed and inbox reading are not available with the current app permissions. The Engagement tab explains this limitation instead of showing sample conversations. LinkedIn post publishing remains supported through the Content workspace.
 
-- review inbox items
-- prepare context-aware replies
-- keep engagement aligned with brand voice
+### X Inbox
+
+The separate X Inbox tab fetches and groups Direct Message events from X. The view is read-only and requests the `dm.read` OAuth scope. X limits this endpoint to a recent event history (up to 30 days); this app requests up to the latest 100 message events per refresh, so older conversations or messages may not appear. Availability also depends on the X account’s permissions, developer-project configuration, and API access tier. A 403 response means X denied the request; it does not mean the inbox is empty.
 
 ### Settings Workspace
 
@@ -172,6 +174,8 @@ If you are deployed, use your Render and Vercel URLs instead.
 4. Return to the app after authorization.
 5. The callback completes the OAuth token exchange.
 6. The connection status should switch to connected.
+
+After deploying live X Engagement and Inbox support, reconnect X once and approve the newly requested `dm.read` scope. The existing X connection will not receive this permission until the OAuth consent flow is completed again. The app does not request `dm.write` because the inbox is view-only.
 
 ### Troubleshooting OAuth
 

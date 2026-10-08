@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CircleHelp,
   FilePenLine,
+  Inbox,
   LayoutDashboard,
   Menu,
   Settings,
@@ -23,6 +24,7 @@ import { SourcesWorkspace } from "./components/SourcesWorkspace";
 import { StrategyWorkspace } from "./components/StrategyWorkspace";
 import { AnalyticsWorkspace } from "./components/AnalyticsWorkspace";
 import { EngagementWorkspace } from "./components/EngagementWorkspace";
+import { DirectMessagesWorkspace } from "./components/DirectMessagesWorkspace";
 import { Login } from "./components/Login";
 import { useAuth } from "./components/auth-context";
 import { getSettings, getStrategy, saveSettings, saveStrategy } from "./lib/api";
@@ -42,7 +44,7 @@ const releaseLevels: Array<{ value: ReleaseLevel; label: string }> = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"strategy" | "sources" | "ideas" | "content" | "calendar" | "engagement" | "analytics" | "settings">(() =>
+  const [activeTab, setActiveTab] = useState<"strategy" | "sources" | "ideas" | "content" | "calendar" | "engagement" | "inbox" | "analytics" | "settings">(() =>
     window.location.pathname.replace(/\/$/, "") === "/settings" ? "settings" : "strategy",
   );
   const [strategy, setStrategy] = useState<Strategy>(emptyStrategy);
@@ -213,6 +215,15 @@ export default function App() {
             }}
           />
           <NavItem
+            icon={<Inbox size={18} />}
+            label="X Inbox"
+            active={activeTab === "inbox"}
+            onClick={() => {
+              setActiveTab("inbox");
+              setMobileNavOpen(false);
+            }}
+          />
+          <NavItem
             icon={<BarChart3 size={18} />}
             label="Analytics"
             active={activeTab === "analytics"}
@@ -323,6 +334,7 @@ export default function App() {
           {activeTab === "content" && <ContentWorkspace />}
           {activeTab === "calendar" && <CalendarWorkspace />}
           {activeTab === "engagement" && <EngagementWorkspace />}
+          {activeTab === "inbox" && <DirectMessagesWorkspace />}
           {activeTab === "analytics" && <AnalyticsWorkspace />}
           {activeTab === "settings" && <SettingsWorkspace />}
         </main>

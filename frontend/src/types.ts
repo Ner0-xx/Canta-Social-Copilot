@@ -179,16 +179,67 @@ export interface RecentPublicationData {
   metrics: RecentPublicationMetrics;
 }
 
-export interface EngagementInboxItem {
-  id: string;
-  platform: string;
-  author: string;
-  content: string;
-  post_title: string;
-}
-
 export interface DraftReplyData {
   draft_reply: string;
+}
+
+export interface XPublicMetrics {
+  like_count?: number;
+  repost_count?: number;
+  reply_count?: number;
+}
+
+export interface XAccountData {
+  id?: string;
+  name: string;
+  username: string;
+}
+
+export interface XPost {
+  id: string;
+  text: string;
+  created_at?: string;
+  conversation_id?: string;
+  public_metrics?: XPublicMetrics;
+  url?: string;
+}
+
+export interface XMention extends XPost {
+  author: {
+    id?: string;
+    name?: string;
+    username?: string;
+    profile_image_url?: string;
+  };
+}
+
+export interface XEngagementData {
+  account: XAccountData;
+  posts: XPost[];
+  mentions: XMention[];
+}
+
+export interface XDirectMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_username: string;
+  is_me: boolean;
+  text: string;
+  created_at?: string;
+}
+
+export interface XDirectMessageConversation {
+  id: string;
+  participant: string;
+  participant_username: string;
+  messages: XDirectMessage[];
+}
+
+export interface XDirectMessagesData {
+  account: XAccountData;
+  conversations: XDirectMessageConversation[];
+  limited_to_recent_events: boolean;
 }
 
 export interface OAuthConnectionData {

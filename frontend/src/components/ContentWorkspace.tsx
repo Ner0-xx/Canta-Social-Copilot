@@ -112,10 +112,13 @@ export function ContentWorkspace() {
   const handleManualPublish = async (draftId: number) => {
     try {
       await publishManual(draftId);
-      setNotice({ type: "success", text: "Draft marked as manually published." });
+      setNotice({ type: "success", text: "Post published to the connected social account." });
       await loadDrafts();
-    } catch {
-      setNotice({ type: "error", text: "Failed to publish manually." });
+    } catch (err) {
+      setNotice({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to publish the post.",
+      });
     }
   };
 
@@ -369,7 +372,7 @@ export function ContentWorkspace() {
                         className="secondary-button small"
                         onClick={() => void handleManualPublish(draft.id)}
                       >
-                        <Send size={13} /> Manual Publish
+                        <Send size={13} /> Publish now
                       </button>
                     </div>
                   </>

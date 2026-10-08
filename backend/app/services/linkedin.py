@@ -1,7 +1,12 @@
-import httpx
-import os
 from urllib.parse import urlencode
+
+import httpx
+
 from app.config import get_settings
+from app.services.draft_image import load_draft_image
+
+LINKEDIN_API_VERSION = "202609"
+
 
 class LinkedInService:
     def __init__(self):
@@ -20,97 +25,93 @@ class LinkedInService:
         return f"https://www.linkedin.com/oauth/v2/authorization?{urlencode(params)}"
 
     async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
-        url = "https://www.linkedin.com/oauth/v2/accessToken"
-        data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-        }
         async with httpx.AsyncClient() as client:
-            resp = await client.post(url, data=data)
-            resp.raise_for_status()
-            return resp.json()
+            response = await client.post(
+                "https://www.linkedin.com/oauth/v2/accessToken",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                },
+            )
+            response.raise_for_status()
+            return response.json()
 
     async def get_user_profile(self, access_token: str) -> dict:
-        url = "https://api.linkedin.com/v2/userinfo"
-        headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            return resp.json()
+            response = await client.get(
+                "https://api.linkedin.com/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+            return response.json()
 
-    async def publish_post(self, access_token: str, text: str, image_path: str = None) -> str:
-        # First get the user's URN
-        profile = await self.get_user_profile(access_token)
-        person_urn = f"urn:li:person:{profile.get('sub')}"
-
-        headers = {
+    def _api_headers(self, access_token: str) -> dict[str, str]:
+        return {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
-            "X-Restli-Protocol-Version": "2.0.0"
+            "Linkedin-Version": LINKEDIN_API_VERSION,
+            "X-Restli-Protocol-Version": "2.0.0",
         }
 
-        asset_urn = None
+    async def publish_post(self, access_token: str, text: str, image_path: str = None) -> str:
+        profile = await self.get_user_profile(access_token)
+        person_urn = f"urn:li:person:{profile.get('sub')}"
+        headers = self._api_headers(access_token)
+        image_urn = None
+
         if image_path:
-            # Step 1: Register upload
-            register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
-            register_data = {
-                "registerUploadRequest": {
-                    "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-                    "owner": person_urn,
-                    "serviceRelationships": [
-                        {
-                            "relationshipType": "OWNER",
-                            "identifier": "urn:li:userGeneratedContent"
-                        }
-                    ]
-                }
-            }
+            image_bytes, _, content_type = await load_draft_image(image_path)
             async with httpx.AsyncClient() as client:
-                reg_resp = await client.post(register_url, headers=headers, json=register_data)
-                reg_resp.raise_for_status()
-                reg_json = reg_resp.json()
-                upload_url = reg_json["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
-                asset_urn = reg_json["value"]["asset"]
-                
-                # Step 2: Upload the binary image
-                # Map logical image_path back to physical data/uploads
-                # e.g. /uploads/123.jpg -> data/uploads/123.jpg
-                local_path = f"data{image_path}"
-                with open(local_path, "rb") as f:
-                    upload_headers = {"Authorization": f"Bearer {access_token}"}
-                    upload_resp = await client.post(upload_url, headers=upload_headers, content=f.read())
-                    upload_resp.raise_for_status()
+                init_response = await client.post(
+                    "https://api.linkedin.com/rest/images?action=initializeUpload",
+                    headers=headers,
+                    json={"initializeUploadRequest": {"owner": person_urn}},
+                )
+                init_response.raise_for_status()
+                upload_data = init_response.json().get("value", {})
+                upload_url = upload_data.get("uploadUrl")
+                image_urn = upload_data.get("image")
+                if not upload_url or not image_urn:
+                    raise ValueError("LinkedIn did not return the image upload details.")
 
-        # Step 3: Create Post
-        url = "https://api.linkedin.com/v2/ugcPosts"
-        data = {
+                upload_response = await client.put(
+                    upload_url,
+                    content=image_bytes,
+                    headers={"Content-Type": content_type},
+                )
+                upload_response.raise_for_status()
+
+        post_data = {
             "author": person_urn,
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {
-                        "text": text
-                    },
-                    "shareMediaCategory": "IMAGE" if asset_urn else "NONE"
-                }
+            "commentary": text,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
             },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-            }
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
         }
-        
-        if asset_urn:
-            data["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = [
-                {
-                    "status": "READY",
-                    "media": asset_urn
+        if image_urn:
+            post_data["content"] = {
+                "media": {
+                    "title": "Image",
+                    "id": image_urn,
                 }
-            ]
+            }
 
         async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=headers, json=data)
-            resp.raise_for_status()
-            return resp.headers.get("X-RestLi-Id", resp.json().get("id", "linkedin-post-id"))
+            response = await client.post(
+                "https://api.linkedin.com/rest/posts",
+                headers=headers,
+                json=post_data,
+            )
+        response.raise_for_status()
+        post_id = response.headers.get("X-RestLi-Id")
+        if not post_id:
+            raise ValueError("LinkedIn did not return a post ID after publishing.")
+        return post_id

@@ -182,7 +182,7 @@ async def oauth_callback(
             
             profile = await x_svc.get_user_profile(access_token)
             account_name = profile.get("username", "X User")
-            scopes = ["tweet.read", "tweet.write", "users.read", "offline.access"]
+            scopes = list(x_svc.AUTHORIZATION_SCOPES)
             refresh_token = token_data.get("refresh_token")
             encrypted_refresh_token = (
                 encrypt_refresh_token(refresh_token) if refresh_token else None
