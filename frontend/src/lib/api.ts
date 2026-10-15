@@ -97,6 +97,12 @@ export function syncSource(sourceId: number): Promise<SourceItemData[]> {
   });
 }
 
+export function deleteSource(sourceId: number): Promise<{ message: string; deleted_items: number }> {
+  return request<{ message: string; deleted_items: number }>(`/api/sources/${sourceId}`, {
+    method: "DELETE",
+  });
+}
+
 // Ideas API
 export function getIdeas(): Promise<ContentIdeaData[]> {
   return request<ContentIdeaData[]>("/api/content/ideas");

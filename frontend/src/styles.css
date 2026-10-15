@@ -985,6 +985,18 @@ select:focus {
   word-break: break-all;
 }
 
+.source-sync-note {
+  margin-top: 7px !important;
+  color: #54715f !important;
+  font-size: 12px;
+}
+
+.source-last-synced {
+  margin: 5px 0 0;
+  color: #7b8982;
+  font-size: 10px;
+}
+
 .status-tag {
   padding: 2px 8px;
   border-radius: 12px;
@@ -1012,8 +1024,19 @@ select:focus {
 
 .card-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.source-delete-button {
+  color: #9b4941;
+}
+
+.source-delete-button:hover:not(:disabled) {
+  color: #7e2c25;
+  background: #fff0ed;
 }
 
 .icon-btn {

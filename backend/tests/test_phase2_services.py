@@ -2,13 +2,15 @@ import asyncio
 from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
 from app.auth import verify_jwt
 from app.db import get_db
-from app.models import OAuthConnection
+from app.models import ContentIdea, OAuthConnection, Source, SourceItem
 from app.services.ingestion import compute_content_hash
 from app.services.llm import LLMService
 from app.services.quality import evaluate_draft_quality
+from app.services import source_sync
 
 
 def test_content_hash_deduplication():
@@ -65,6 +67,96 @@ def test_sources_api(client: TestClient):
     resp_items = client.get("/api/sources/items")
     assert resp_items.status_code == 200
     assert len(resp_items.json()) >= 1
+
+
+def test_delete_source_removes_its_ingested_items_but_preserves_ideas(client: TestClient):
+    source_response = client.post(
+        "/api/sources",
+        json={
+            "name": "Delete me",
+            "source_type": "note",
+            "uri_or_content": "This source will be deleted.",
+        },
+    )
+    assert source_response.status_code == 200
+    source_id = source_response.json()["id"]
+
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    session.add(
+        ContentIdea(
+            title="Idea retained",
+            summary="Created from the source before deletion",
+            source_type="generated",
+            source_ref="Delete me",
+        )
+    )
+    session.commit()
+    generator.close()
+
+    response = client.delete(f"/api/sources/{source_id}")
+
+    assert response.status_code == 200
+    assert response.json()["deleted_items"] == 1
+    assert client.get("/api/sources").json() == []
+    assert client.get("/api/sources/items").json() == []
+    assert client.get("/api/content/ideas").json()[0]["title"] == "Idea retained"
+    assert client.delete(f"/api/sources/{source_id}").status_code == 404
+
+
+def test_scheduled_source_sync_continues_after_a_source_failure(client: TestClient, monkeypatch):
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    working_source = Source(
+        name="Working note",
+        source_type="note",
+        uri_or_content="Fresh material",
+        status="active",
+    )
+    failing_source = Source(
+        name="Retry me",
+        source_type="url",
+        uri_or_content="https://example.invalid",
+        status="active",
+    )
+    session.add_all([working_source, failing_source])
+    session.commit()
+    test_session_factory = sessionmaker(
+        bind=session.get_bind(),
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    working_id = working_source.id
+    failing_id = failing_source.id
+    generator.close()
+    monkeypatch.setattr(source_sync, "SessionLocal", test_session_factory)
+
+    class FakeIngestion:
+        async def process_source(self, source):
+            if source.id == failing_id:
+                raise RuntimeError("Temporary fetch failure")
+            return [
+                {
+                    "title": "Fresh material",
+                    "author": "User Note",
+                    "url": "",
+                    "canonical_url": "",
+                    "content": "Fresh material",
+                    "content_hash": compute_content_hash("Fresh material"),
+                    "published_at": datetime.now(),
+                }
+            ]
+
+    monkeypatch.setattr(source_sync, "ingestion_service", FakeIngestion())
+
+    asyncio.run(source_sync.sync_all_active_sources())
+
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    assert session.get(Source, working_id).last_fetched_at is not None
+    assert session.query(SourceItem).filter_by(source_id=working_id).count() == 1
+    assert session.get(Source, failing_id).status == "error"
+    generator.close()
 
 
 def test_idea_and_draft_generation_api(client: TestClient):

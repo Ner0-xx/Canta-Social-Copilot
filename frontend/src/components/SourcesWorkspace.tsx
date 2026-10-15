@@ -1,6 +1,6 @@
-import { BookOpenText, Link2, Plus, RefreshCw, Rss } from "lucide-react";
+import { BookOpenText, Link2, Plus, RefreshCw, Rss, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { createSource, getSourceItems, getSources, syncSource } from "../lib/api";
+import { createSource, deleteSource, getSourceItems, getSources, syncSource } from "../lib/api";
 import type { SourceData, SourceItemData } from "../types";
 
 export function SourcesWorkspace() {
@@ -9,6 +9,7 @@ export function SourcesWorkspace() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const [name, setName] = useState("");
   const [sourceType, setSourceType] = useState<"rss" | "url" | "note">("rss");
@@ -76,6 +77,34 @@ export function SourcesWorkspace() {
     }
   };
 
+  const handleDelete = async (source: SourceData) => {
+    if (
+      !window.confirm(
+        `Delete "${source.name}" and its ingested material? Ideas already generated from it will remain.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(source.id);
+    setMessage(null);
+    try {
+      const result = await deleteSource(source.id);
+      setMessage({
+        type: "success",
+        text: `${source.name} was deleted along with ${result.deleted_items} ingested item(s). Existing ideas and drafts were kept.`,
+      });
+      await loadData();
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to delete source.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading) {
     return <div className="workspace-card">Loading sources...</div>;
   }
@@ -86,6 +115,9 @@ export function SourcesWorkspace() {
         <div>
           <h2>Research & Ingestion Sources</h2>
           <p>Connect RSS feeds, paste article URLs, or store raw notes to fuel source-backed content generation.</p>
+          <p className="source-sync-note">
+            RSS feeds and web pages sync automatically every 24 hours. You can also sync or remove a source at any time.
+          </p>
         </div>
       </header>
 
@@ -168,14 +200,28 @@ export function SourcesWorkspace() {
                     <span className={`status-tag ${src.status}`}>{src.status}</span>
                   </div>
                   <p className="source-url">{src.uri_or_content}</p>
+                  <p className="source-last-synced">
+                    {src.last_fetched_at
+                      ? `Last synced ${new Date(src.last_fetched_at).toLocaleString()}`
+                      : "Not synced yet"}
+                  </p>
                   <div className="card-actions">
                     <button
                       type="button"
                       className="secondary-button icon-btn"
                       onClick={() => void handleSync(src.id)}
-                      disabled={syncingId === src.id}
+                      disabled={syncingId === src.id || deletingId === src.id}
                     >
                       <RefreshCw size={14} className={syncingId === src.id ? "spin" : ""} /> Sync
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button icon-btn source-delete-button"
+                      onClick={() => void handleDelete(src)}
+                      disabled={deletingId === src.id || syncingId === src.id}
+                    >
+                      <Trash2 size={14} />
+                      {deletingId === src.id ? "Deleting..." : "Delete"}
                     </button>
                   </div>
                 </div>

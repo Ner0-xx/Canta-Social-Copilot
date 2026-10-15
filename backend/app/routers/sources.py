@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Source, SourceItem
 from app.schemas import SourceCreate, SourceData, SourceItemData
 from app.services.audit import record_audit_event
-from app.services.ingestion import IngestionService
+from app.services.source_sync import sync_source_items
 
 router = APIRouter(prefix="/sources", tags=["sources"])
-ingestion_service = IngestionService()
 
 
 @router.post("", response_model=SourceData)
@@ -63,49 +62,35 @@ async def sync_source(source_id: int, session: Session = Depends(get_db)) -> lis
         raise HTTPException(status_code=404, detail="Source not found")
 
     try:
-        extracted_items = await ingestion_service.process_source(source)
-        created_items: list[SourceItem] = []
-
-        for item_data in extracted_items:
-            # Check deduplication hash
-            existing = session.scalar(
-                select(SourceItem).where(SourceItem.content_hash == item_data["content_hash"])
-            )
-            if not existing:
-                item = SourceItem(
-                    source_id=source.id,
-                    title=item_data["title"],
-                    author=item_data["author"],
-                    url=item_data["url"],
-                    canonical_url=item_data["canonical_url"],
-                    content=item_data["content"],
-                    content_hash=item_data["content_hash"],
-                    published_at=item_data["published_at"],
-                )
-                session.add(item)
-                created_items.append(item)
-
-        source.last_fetched_at = source.created_at
-        source.status = "active"
-
-        record_audit_event(
-            session,
-            event_type="source.synced",
-            entity_type="source",
-            entity_id=str(source.id),
-            summary="Source items synced",
-            details={"new_items": len(created_items)},
-        )
-        session.commit()
-
-        return list(
-            session.scalars(
-                select(SourceItem)
-                .where(SourceItem.source_id == source.id)
-                .order_by(SourceItem.ingested_at.desc())
-            ).all()
-        )
+        return await sync_source_items(session, source)
     except Exception as exc:
-        source.status = "error"
-        session.commit()
-        raise HTTPException(status_code=400, detail=f"Source processing failed: {exc}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source processing failed: {exc}",
+        ) from exc
+
+
+@router.delete("/{source_id}")
+def delete_source(source_id: int, session: Session = Depends(get_db)) -> dict[str, int | str]:
+    source = session.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    source_name = source.name
+    deleted_items = session.execute(
+        delete(SourceItem).where(SourceItem.source_id == source_id)
+    ).rowcount or 0
+    session.delete(source)
+    record_audit_event(
+        session,
+        event_type="source.deleted",
+        entity_type="source",
+        entity_id=str(source_id),
+        summary="Source deleted",
+        details={"name": source_name, "deleted_items": deleted_items},
+    )
+    session.commit()
+    return {
+        "message": "Source and its ingested items were deleted.",
+        "deleted_items": deleted_items,
+    }

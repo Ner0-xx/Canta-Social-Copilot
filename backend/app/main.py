@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,7 @@ from app.config import get_settings
 from app.db import Base, engine
 from app.routers import content, health, settings as settings_router, sources, strategy, schedule, oauth, analytics_api, engagement_api
 from app.scheduler import scheduler
+from app.services.source_sync import sync_all_active_sources
 from app.services.weekly_report import generate_weekly_report
 from app.auth import verify_jwt
 from fastapi import Depends
@@ -26,6 +28,16 @@ async def lifespan(_: FastAPI):
         minute=0,
         id="weekly_performance_report",
         replace_existing=True
+    )
+    scheduler.add_job(
+        sync_all_active_sources,
+        "interval",
+        hours=24,
+        id="daily_source_sync",
+        next_run_time=datetime.now(UTC),
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
     )
     
     scheduler.start()

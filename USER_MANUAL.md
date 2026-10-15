@@ -74,7 +74,19 @@ Supported sources may include:
 - notes or documents
 - reference content for trend research
 
-After adding sources, generate ideas based on them.
+After adding a source, Canta immediately tries to ingest it. RSS feeds, web pages, and notes are also synchronized automatically when the backend starts and every 24 hours afterward. Each source displays its last successful sync time; use **Sync** to fetch it sooner. If one source fails during the scheduled run, the others are still processed, and the failed source is marked with an error for the next daily retry.
+
+Use **Delete** to remove a source and its ingested items. Ideas and drafts already created from that material are kept. Deletion cannot be undone.
+
+### How sources are used
+
+- RSS sources provide up to 10 feed items per sync.
+- Web-page sources provide the page title and extracted text.
+- Notes are saved as source material for idea generation.
+- Ingested material appears in the Sources inbox and can be selected in Ideas. The selected item's title and content are sent to the configured AI provider as context for generating content ideas; your saved Strategy and available performance context are also used.
+- Generated ideas are saved in the app. Choosing an idea and generating drafts produces platform-specific draft variants that you can review and edit before approval.
+
+Adding or syncing a source does not itself publish anything to a social account.
 
 ### Ideas Workspace
 
