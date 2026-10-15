@@ -30,6 +30,25 @@ def test_content_hash_deduplication():
     assert hash1 == hash2
 
 
+def test_content_prompts_prioritize_african_and_nigerian_readers_without_fake_citations():
+    llm = LLMService(Settings(inference_provider="openai"))
+
+    ideas_prompt = llm._build_ideas_prompt("Source title", "Source content.", None)
+    drafts_prompt = llm._build_drafts_prompt(
+        "Idea title", "Idea summary.", "Proposed angle.", None
+    )
+
+    for prompt in (ideas_prompt, drafts_prompt):
+        assert "especially Nigerians" in prompt
+        assert "without" in prompt and "monolith" in prompt
+        assert "Write out the full meaning" in prompt
+        assert "Do not claim to have researched external" in prompt
+        assert "invent source names" in prompt
+
+    assert "exactly 5 distinct" in ideas_prompt
+    assert "strong, truthful hook" in drafts_prompt
+
+
 def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
     async def _test():
         llm = LLMService(Settings(inference_provider="template"))
@@ -127,7 +146,7 @@ def test_llm_provider_errors_distinguish_timeout_and_unavailable_model(monkeypat
         with pytest.raises(LLMGenerationError) as error:
             await llm.generate_ideas("AI Trends", "Source content.")
         assert error.value.status_code == 504
-        assert "timed out after 60 seconds" in str(error.value)
+        assert "timed out after 90 seconds" in str(error.value)
 
     asyncio.run(check_timeout())
 
@@ -151,7 +170,7 @@ def test_llm_provider_errors_distinguish_timeout_and_unavailable_model(monkeypat
     asyncio.run(check_unavailable())
 
 
-def test_openai_compatible_request_timeout_is_60_seconds(monkeypatch):
+def test_openai_compatible_request_timeout_is_90_seconds(monkeypatch):
     timeouts = []
 
     class FakeResponse:
@@ -180,7 +199,7 @@ def test_openai_compatible_request_timeout_is_60_seconds(monkeypatch):
     )
 
     assert result == "ok"
-    assert timeouts == [60.0]
+    assert timeouts == [90.0]
 
 
 def test_quality_evaluator():

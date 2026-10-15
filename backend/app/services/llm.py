@@ -30,7 +30,7 @@ class LLMService:
         if isinstance(exc, httpx.TimeoutException):
             logger.warning("AI provider timed out while %s", action)
             return LLMGenerationError(
-                "The AI provider request timed out after 60 seconds. Please try again.",
+                "The AI provider request timed out after 90 seconds. Please try again.",
                 status_code=504,
             )
 
@@ -168,7 +168,7 @@ class LLMService:
             "temperature": 0.7,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -185,7 +185,7 @@ class LLMService:
             "stream": False,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json().get("response", "")
@@ -194,7 +194,14 @@ class LLMService:
         self, source_title: str, source_content: str, strategy: StrategyData | None, analytics_context: str = ""
     ) -> str:
         pillars = [p.name for p in strategy.pillars] if strategy and strategy.pillars else ["General"]
-        audiences = [a.name for a in strategy.audiences] if strategy and strategy.audiences else ["General Audience"]
+        audiences = (
+            [
+                f"{audience.name}: {audience.description}"
+                for audience in strategy.audiences
+            ]
+            if strategy and strategy.audiences
+            else ["General Audience"]
+        )
         tone = ", ".join(strategy.voice.tone) if strategy and strategy.voice and strategy.voice.tone else "Professional"
 
         analytics_instruction = f"\n{analytics_context}\n" if analytics_context else ""
@@ -206,9 +213,24 @@ Do not reuse generic recurring formats or merely rephrase the source title. Give
 different editorial angle, such as an evidence-based insight, practical implication, trade-off,
 counterpoint, unanswered question, or audience-specific application where the material supports it.
 Do not invent facts that are absent from the source.
+
+Audience and writing guidance:
+- The primary readers are Africans, especially Nigerians. Make the ideas relevant and understandable
+  to them without treating African or Nigerian readers as a monolith.
+- Respect the configured target audiences below while prioritizing this regional audience.
+- Prefer clear, natural language an everyday reader can follow. Explain specialized or ambiguous
+  terms in plain language without flattening important nuance.
+- Write out the full meaning of abbreviations and acronyms on first use; avoid them when they add
+  no value.
+- Use a specific, honest hook or a reader-relevant question to make each idea compelling. Avoid
+  clickbait, stereotypes, forced local references, or unsupported claims.
+- You do not have live web-search access in this request. Do not claim to have researched external
+  sources or invent source names, quotations, citations, or links. Use the supplied source as the
+  factual anchor; only carry through external references and links that are actually present there.
+
 Brand Tone: {tone}
 Pillars: {', '.join(pillars)}
-Target Audiences: {', '.join(audiences)}
+Configured Target Audiences: {'; '.join(audiences)}
 {analytics_instruction}
 Source Title: {source_title}
 Source Content: {source_content[:2000]}
@@ -232,17 +254,43 @@ Return exactly five objects in the JSON array.
         tone = ", ".join(strategy.voice.tone) if strategy and strategy.voice and strategy.voice.tone else "Professional, insightful"
         cta = strategy.voice.call_to_action_style if strategy and strategy.voice else "Ask a thought-provoking question."
         avoided = ", ".join(strategy.voice.avoided_vocabulary) if strategy and strategy.voice else ""
+        audiences = (
+            [
+                f"{audience.name}: {audience.description}"
+                for audience in strategy.audiences
+            ]
+            if strategy and strategy.audiences
+            else ["General Audience"]
+        )
 
         return f"""
 Develop this idea into original, complete social media content. Do not copy the title,
 summary, or proposed angle as the body; use them as a brief, then add useful explanation,
 specific implications, and a clear audience-relevant takeaway. Do not invent facts beyond the
 brief. Return polished, publication-ready text, not a plan or outline.
+
+Audience and writing guidance:
+- The primary readers are Africans, especially Nigerians. Make the writing relevant and
+  understandable to them without treating African or Nigerian audiences as a monolith.
+- Respect the configured target audiences below while prioritizing this regional audience.
+- Prefer clear, natural language an everyday reader can follow. Explain specialized or ambiguous
+  terms in plain language without losing the substance or integrity of the message.
+- Write out the full meaning of abbreviations and acronyms on first use; avoid them when they add
+  no value.
+- Open with a strong, truthful hook that earns attention through relevance, a useful insight, a
+  specific tension, or a thoughtful question. Avoid clickbait and forced local references.
+- Use Nigerian or broader African examples only when they genuinely fit the idea and are supported
+  by the brief; do not invent statistics, events, quotations, or claims.
+- You do not have live web-search access in this request. Do not claim to have researched external
+  sources or invent source names, quotations, citations, or links. Use the supplied idea as the
+  factual anchor; include external references or links only when actually supplied in the brief.
+
 Idea Title: {idea_title}
 Summary: {idea_summary}
 Proposed Angle: {proposed_angle}
 
 Tone: {tone}
+Configured Target Audiences: {'; '.join(audiences)}
 Call to Action Style: {cta}
 Avoided Words: {avoided}
 
