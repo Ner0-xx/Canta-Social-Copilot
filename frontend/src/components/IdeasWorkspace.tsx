@@ -1,6 +1,6 @@
-import { Lightbulb, Sparkles, Wand2 } from "lucide-react";
+import { Lightbulb, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { generateDraftsForIdea, generateIdeas, getIdeas, getSourceItems } from "../lib/api";
+import { generateDraftsForIdea, generateIdeas, getIdeas, getSourceItems, removeIdea } from "../lib/api";
 import type { ContentIdeaData, SourceItemData } from "../types";
 
 export function IdeasWorkspace() {
@@ -9,6 +9,7 @@ export function IdeasWorkspace() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generatingDraftId, setGeneratingDraftId] = useState<number | null>(null);
+  const [removingIdeaId, setRemovingIdeaId] = useState<number | null>(null);
 
   const [selectedSourceId, setSelectedSourceId] = useState<number | "">("");
   const [customTopic, setCustomTopic] = useState("");
@@ -83,6 +84,29 @@ export function IdeasWorkspace() {
     }
   };
 
+  const handleRemoveIdea = async (idea: ContentIdeaData) => {
+    if (!window.confirm(`Remove "${idea.title}" from the Ideas inbox? Any drafts already made from it will be kept.`)) {
+      return;
+    }
+    setRemovingIdeaId(idea.id);
+    setNotice(null);
+    try {
+      await removeIdea(idea.id);
+      setIdeas((current) => current.filter((item) => item.id !== idea.id));
+      setNotice({
+        type: "success",
+        text: "Idea removed from the inbox. Any drafts created from it have been kept.",
+      });
+    } catch (err) {
+      setNotice({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to remove idea",
+      });
+    } finally {
+      setRemovingIdeaId(null);
+    }
+  };
+
   if (loading) {
     return <div className="workspace-card">Loading idea inbox...</div>;
   }
@@ -92,7 +116,7 @@ export function IdeasWorkspace() {
       <header className="workspace-header">
         <div>
           <h2>Source-Backed Content Ideas</h2>
-          <p>Generate, score, and select strategic content angles aligned with your brand voice and pillars.</p>
+          <p>Generate five source-grounded ideas with AI, then select angles aligned with your brand voice and pillars.</p>
         </div>
       </header>
 
@@ -184,15 +208,27 @@ export function IdeasWorkspace() {
 
                 <div className="idea-footer">
                   <span className="source-ref">Source: {idea.source_ref || idea.source_type}</span>
-                  <button
-                    type="button"
-                    className="primary-button small"
-                    onClick={() => void handleGenerateDrafts(idea.id)}
-                    disabled={generatingDraftId === idea.id}
-                  >
-                    <Wand2 size={14} />
-                    {generatingDraftId === idea.id ? "Drafting..." : "Generate X & LinkedIn Drafts"}
-                  </button>
+                  <div className="idea-actions">
+                    <button
+                      type="button"
+                      className="secondary-button small danger-button"
+                      aria-label={`Remove ${idea.title}`}
+                      onClick={() => void handleRemoveIdea(idea)}
+                      disabled={removingIdeaId === idea.id}
+                    >
+                      <Trash2 size={14} />
+                      {removingIdeaId === idea.id ? "Removing..." : "Remove"}
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button small"
+                      onClick={() => void handleGenerateDrafts(idea.id)}
+                      disabled={generatingDraftId === idea.id}
+                    >
+                      <Wand2 size={14} />
+                      {generatingDraftId === idea.id ? "Drafting..." : "Generate X & LinkedIn Drafts"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

@@ -1162,6 +1162,16 @@ select:focus {
   border-top: 1px solid #eef2f0;
 }
 
+.idea-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-button {
+  color: #a23131;
+}
+
 .source-ref {
   font-size: 11px;
   color: #72807c;

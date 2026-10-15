@@ -108,6 +108,12 @@ export function getIdeas(): Promise<ContentIdeaData[]> {
   return request<ContentIdeaData[]>("/api/content/ideas");
 }
 
+export function removeIdea(ideaId: number): Promise<{ archived: boolean }> {
+  return request<{ archived: boolean }>(`/api/content/ideas/${ideaId}`, {
+    method: "DELETE",
+  });
+}
+
 export function generateIdeas(payload: {
   source_item_id?: number;
   topic_title?: string;

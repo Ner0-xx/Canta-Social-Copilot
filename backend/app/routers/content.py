@@ -38,7 +38,7 @@ from app.schemas import (
 from app.services.audit import record_audit_event
 from app.services.draft_image import DraftImageError
 from app.services.linkedin import LinkedInService
-from app.services.llm import LLMService
+from app.services.llm import IdeaGenerationError, LLMService
 from app.services.quality import evaluate_draft_quality
 from app.services.x_oauth import XCredentialError, get_valid_x_access_token
 from app.services.x_service import XAPIError, XService
@@ -102,9 +102,32 @@ def create_idea(payload: ContentIdeaCreate, session: Session = Depends(get_db)) 
 def list_ideas(session: Session = Depends(get_db)) -> list[ContentIdea]:
     return list(
         session.scalars(
-            select(ContentIdea).order_by(ContentIdea.created_at.desc(), ContentIdea.id.desc())
+            select(ContentIdea)
+            .where(ContentIdea.status != "archived")
+            .order_by(ContentIdea.created_at.desc(), ContentIdea.id.desc())
         ).all()
     )
+
+
+@router.delete("/ideas/{idea_id}")
+def archive_idea(
+    idea_id: int, session: Annotated[Session, Depends(get_db)]
+) -> dict[str, bool]:
+    idea = session.get(ContentIdea, idea_id)
+    if idea is None:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    if idea.status != "archived":
+        idea.status = "archived"
+        record_audit_event(
+            session,
+            event_type="content.idea.archived",
+            entity_type="content_idea",
+            entity_id=str(idea.id),
+            summary="Idea removed from the Ideas workspace",
+            details={"title": idea.title},
+        )
+        session.commit()
+    return {"archived": True}
 
 
 @router.post("/ideas/generate", response_model=list[ContentIdeaData])
@@ -145,7 +168,10 @@ async def generate_ideas_from_source(
     except Exception as e:
         logger.warning(f"Could not fetch analytics context: {e}")
 
-    generated = await llm_service.generate_ideas(title, content, strategy, analytics_context)
+    try:
+        generated = await llm_service.generate_ideas(title, content, strategy, analytics_context)
+    except IdeaGenerationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     created_ideas: list[ContentIdea] = []
     for data in generated:
@@ -184,6 +210,10 @@ async def generate_drafts_for_idea(
     idea = session.get(ContentIdea, idea_id)
     if idea is None:
         raise HTTPException(status_code=404, detail="Idea not found")
+    if idea.status == "archived":
+        raise HTTPException(
+            status_code=409, detail="Archived ideas cannot be used to generate drafts"
+        )
 
     strategy = get_strategy(session)
     draft_data = await llm_service.generate_draft_variants(
@@ -273,6 +303,10 @@ def create_draft(
     idea = session.get(ContentIdea, idea_id)
     if idea is None:
         raise HTTPException(status_code=404, detail="Idea not found")
+    if idea.status == "archived":
+        raise HTTPException(
+            status_code=409, detail="Archived ideas cannot be used to create drafts"
+        )
 
     strategy = get_strategy(session)
     qc = evaluate_draft_quality(payload.body, payload.platform, payload.variant_type, strategy)

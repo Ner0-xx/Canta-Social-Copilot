@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -9,6 +10,12 @@ from app.config import Settings, get_settings
 from app.schemas import StrategyData
 
 logger = logging.getLogger(__name__)
+
+
+class IdeaGenerationError(Exception):
+    def __init__(self, message: str, status_code: int = 502):
+        self.status_code = status_code
+        super().__init__(message)
 
 
 class LLMService:
@@ -24,22 +31,53 @@ class LLMService:
         if provider in {"openai_compatible", "openai", "openrouter", "custom_api"}:
             try:
                 response_text = await self._call_openai_compatible(prompt)
-                ideas = self._parse_json_ideas(response_text)
-                if ideas:
-                    return ideas
             except Exception as exc:
-                logger.warning(f"External LLM API call failed: {exc}. Falling back to template generator.")
-
+                logger.exception("External AI idea generation failed")
+                raise IdeaGenerationError(
+                    "The AI provider could not generate ideas. Check its backend configuration "
+                    "and try again."
+                ) from exc
         elif provider == "ollama":
             try:
                 response_text = await self._call_ollama(prompt)
-                ideas = self._parse_json_ideas(response_text)
-                if ideas:
-                    return ideas
             except Exception as exc:
-                logger.warning(f"Ollama call failed: {exc}. Falling back to template generator.")
+                logger.exception("Ollama idea generation failed")
+                raise IdeaGenerationError(
+                    "The AI provider could not generate ideas. Check its backend configuration "
+                    "and try again."
+                ) from exc
+        else:
+            raise IdeaGenerationError(
+                "AI-only idea generation is enabled, but no supported AI provider is "
+                "configured.",
+                status_code=503,
+            )
 
-        return self._generate_template_ideas(source_title, source_content, strategy)
+        ideas = self._parse_json_ideas(response_text)
+        valid_ideas = len(ideas) == 5
+        for idea in ideas:
+            if not isinstance(idea, dict) or not all(
+                isinstance(idea.get(field), str) and idea[field].strip()
+                for field in ("title", "summary", "proposed_angle")
+            ):
+                valid_ideas = False
+                break
+            relevance_score = idea.get("relevance_score")
+            if relevance_score is not None and (
+                isinstance(relevance_score, bool)
+                or not isinstance(relevance_score, (int, float))
+                or not math.isfinite(relevance_score)
+                or not 0 <= relevance_score <= 100
+            ):
+                valid_ideas = False
+                break
+
+        if not valid_ideas:
+            raise IdeaGenerationError(
+                "The AI returned an incomplete or invalid idea list. "
+                "Please try generating ideas again."
+            )
+        return ideas
 
     async def generate_draft_variants(
         self,
@@ -124,7 +162,12 @@ class LLMService:
         analytics_instruction = f"\n{analytics_context}\n" if analytics_context else ""
 
         return f"""
-Given the following source material, generate 3 strategic social media content ideas.
+Analyze the source material and generate exactly 5 distinct, specific social media content ideas.
+Ground every idea in concrete facts, arguments, examples, or questions found in the source.
+Do not reuse generic recurring formats or merely rephrase the source title. Give each idea a
+different editorial angle, such as an evidence-based insight, practical implication, trade-off,
+counterpoint, unanswered question, or audience-specific application where the material supports it.
+Do not invent facts that are absent from the source.
 Brand Tone: {tone}
 Pillars: {', '.join(pillars)}
 Target Audiences: {', '.join(audiences)}
@@ -137,6 +180,8 @@ Return a JSON array of objects with the following keys:
 - "summary": 2-3 sentence overview
 - "proposed_angle": unique takeaway or hook angle
 - "relevance_score": float between 70.0 and 99.0
+
+Return exactly five objects in the JSON array.
 """
 
     def _build_drafts_prompt(
@@ -187,40 +232,6 @@ Return a JSON object with:
             except json.JSONDecodeError:
                 pass
         return None
-
-    def _generate_template_ideas(
-        self, source_title: str, source_content: str, strategy: StrategyData | None
-    ) -> list[dict[str, Any]]:
-        base_name = source_title or "Ingested Topic"
-        pillar_id = strategy.pillars[0].id if strategy and strategy.pillars and strategy.pillars[0].id else None
-        audience_id = strategy.audiences[0].id if strategy and strategy.audiences and strategy.audiences[0].id else None
-
-        return [
-            {
-                "title": f"Key Lessons from: {base_name}",
-                "summary": f"Break down the actionable strategies discussed in '{base_name}'.",
-                "proposed_angle": "Focus on 3 immediate practical steps professionals can take.",
-                "relevance_score": 92.5,
-                "pillar_id": pillar_id,
-                "audience_id": audience_id,
-            },
-            {
-                "title": f"Why {base_name} Matters Now",
-                "summary": f"Analyze current industry implications based on content from '{base_name}'.",
-                "proposed_angle": "Highlight emerging trends and future impact.",
-                "relevance_score": 88.0,
-                "pillar_id": pillar_id,
-                "audience_id": audience_id,
-            },
-            {
-                "title": f"Debunking Misconceptions: {base_name}",
-                "summary": f"Contrarian take on common assumptions surrounding '{base_name}'.",
-                "proposed_angle": "Challenge conventional wisdom with evidence.",
-                "relevance_score": 85.0,
-                "pillar_id": pillar_id,
-                "audience_id": audience_id,
-            },
-        ]
 
     def _generate_template_drafts(
         self,

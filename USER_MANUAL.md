@@ -95,9 +95,11 @@ This is where the app turns your sources and strategy into draftable ideas.
 Typical flow:
 
 1. choose a source or input topic
-2. generate ideas
+2. ask the configured AI provider to generate five distinct, source-grounded ideas
 3. review generated ideas
 4. create content drafts from the chosen ideas
+
+Idea generation requires a supported AI provider to be configured on the backend. If the provider is unavailable or returns an invalid response, the app reports the problem instead of substituting template ideas. Use **Remove** to archive an unwanted idea from the inbox; any drafts already created from it are preserved.
 
 ### Content Workspace
 

@@ -1,16 +1,19 @@
 import asyncio
+import json
 from datetime import datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from app.auth import verify_jwt
+from app.config import Settings
 from app.db import get_db
 from app.models import ContentIdea, OAuthConnection, Source, SourceItem
-from app.services.ingestion import compute_content_hash
-from app.services.llm import LLMService
-from app.services.quality import evaluate_draft_quality
 from app.services import source_sync
+from app.services.ingestion import compute_content_hash
+from app.services.llm import IdeaGenerationError, LLMService
+from app.services.quality import evaluate_draft_quality
 
 
 def test_content_hash_deduplication():
@@ -19,13 +22,53 @@ def test_content_hash_deduplication():
     assert hash1 == hash2
 
 
-def test_llm_template_fallback():
+def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
     async def _test():
-        llm = LLMService()
-        ideas = await llm.generate_ideas("AI Trends 2026", "Content about recent advances in AI.")
-        assert len(ideas) >= 3
-        assert "title" in ideas[0]
+        llm = LLMService(Settings(inference_provider="template"))
+        with pytest.raises(IdeaGenerationError) as error:
+            await llm.generate_ideas("AI Trends 2026", "Content about recent advances in AI.")
+        assert error.value.status_code == 503
 
+        ai_llm = LLMService(Settings(inference_provider="openai"))
+        response_ideas = [
+            {
+                "title": f"Idea {index}",
+                "summary": "A source-grounded idea summary.",
+                "proposed_angle": "A distinct angle.",
+                "relevance_score": 85,
+            }
+            for index in range(5)
+        ]
+
+        async def fake_call(prompt):
+            assert "exactly 5 distinct" in prompt
+            return json.dumps(response_ideas)
+
+        monkeypatch.setattr(ai_llm, "_call_openai_compatible", fake_call)
+        ideas = await ai_llm.generate_ideas(
+            "AI Trends 2026", "Content about recent advances in AI."
+        )
+        assert len(ideas) == 5
+
+        async def invalid_call(_prompt):
+            return "[]"
+
+        monkeypatch.setattr(ai_llm, "_call_openai_compatible", invalid_call)
+        with pytest.raises(IdeaGenerationError) as error:
+            await ai_llm.generate_ideas(
+                "AI Trends 2026", "Content about recent advances in AI."
+            )
+        assert error.value.status_code == 502
+
+        async def failing_call(_prompt):
+            raise RuntimeError("provider unavailable")
+
+        monkeypatch.setattr(ai_llm, "_call_openai_compatible", failing_call)
+        with pytest.raises(IdeaGenerationError) as error:
+            await ai_llm.generate_ideas("AI Trends 2026", "Content about recent advances in AI.")
+        assert error.value.status_code == 502
+
+        # Draft generation retains its existing template fallback.
         drafts = await llm.generate_draft_variants("AI Strategy", "How to use AI effectively.")
         assert "x_post" in drafts
         assert "x_thread" in drafts
@@ -159,15 +202,33 @@ def test_scheduled_source_sync_continues_after_a_source_failure(client: TestClie
     generator.close()
 
 
-def test_idea_and_draft_generation_api(client: TestClient):
+def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
+    from app.routers import content as content_router
+
+    async def fake_generate_ideas(*_args):
+        return [
+            {
+                "title": f"Idea {index}",
+                "summary": "A generated summary.",
+                "proposed_angle": "A distinct perspective.",
+                "relevance_score": 85,
+            }
+            for index in range(5)
+        ]
+
+    monkeypatch.setattr(content_router.llm_service, "generate_ideas", fake_generate_ideas)
+
     # Generate ideas from topic
     gen_ideas_resp = client.post(
         "/api/content/ideas/generate",
-        json={"topic_title": "Local LLMs in 2026", "topic_content": "Running LLMs on consumer hardware."},
+        json={
+            "topic_title": "Local LLMs in 2026",
+            "topic_content": "Running LLMs on consumer hardware.",
+        },
     )
     assert gen_ideas_resp.status_code == 200
     ideas = gen_ideas_resp.json()
-    assert len(ideas) >= 1
+    assert len(ideas) == 5
     idea_id = ideas[0]["id"]
 
     # Generate draft variants for idea
@@ -181,6 +242,35 @@ def test_idea_and_draft_generation_api(client: TestClient):
     check_resp = client.post(f"/api/content/drafts/{draft_id}/check")
     assert check_resp.status_code == 200
     assert "score" in check_resp.json()
+
+    # Removing an idea hides it from the inbox while retaining associated drafts.
+    remove_resp = client.delete(f"/api/content/ideas/{idea_id}")
+    assert remove_resp.status_code == 200
+    assert remove_resp.json() == {"archived": True}
+    assert all(item["id"] != idea_id for item in client.get("/api/content/ideas").json())
+    assert client.post(f"/api/content/ideas/{idea_id}/generate-drafts").status_code == 409
+    drafts_after_removal = client.get("/api/content/drafts")
+    assert drafts_after_removal.status_code == 200
+    assert len(drafts_after_removal.json()) == 3
+    assert all(draft["idea_id"] == idea_id for draft in drafts_after_removal.json())
+
+
+def test_idea_generation_returns_clear_error_without_ai(client: TestClient, monkeypatch):
+    from app.routers import content as content_router
+
+    async def no_ai_configured(*_args):
+        raise IdeaGenerationError(
+            "AI-only idea generation is enabled, but no supported AI provider is configured.",
+            status_code=503,
+        )
+
+    monkeypatch.setattr(content_router.llm_service, "generate_ideas", no_ai_configured)
+    response = client.post(
+        "/api/content/ideas/generate",
+        json={"topic_title": "AI Trends", "topic_content": "Source content."},
+    )
+    assert response.status_code == 503
+    assert "no supported AI provider is configured" in response.json()["detail"]
 
 
 def test_disconnect_oauth_requires_auth_and_removes_connection(client: TestClient):
