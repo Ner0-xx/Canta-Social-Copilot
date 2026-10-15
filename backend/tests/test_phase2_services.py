@@ -12,7 +12,7 @@ from app.db import get_db
 from app.models import ContentIdea, OAuthConnection, Source, SourceItem
 from app.services import source_sync
 from app.services.ingestion import compute_content_hash
-from app.services.llm import IdeaGenerationError, LLMService
+from app.services.llm import IdeaGenerationError, LLMGenerationError, LLMService
 from app.services.quality import evaluate_draft_quality
 
 
@@ -68,11 +68,41 @@ def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
             await ai_llm.generate_ideas("AI Trends 2026", "Content about recent advances in AI.")
         assert error.value.status_code == 502
 
-        # Draft generation retains its existing template fallback.
-        drafts = await llm.generate_draft_variants("AI Strategy", "How to use AI effectively.")
-        assert "x_post" in drafts
-        assert "x_thread" in drafts
-        assert "linkedin_post" in drafts
+        with pytest.raises(LLMGenerationError) as error:
+            await llm.generate_draft_variants("AI Strategy", "How to use AI effectively.")
+        assert error.value.status_code == 503
+
+        draft_llm = LLMService(Settings(inference_provider="openai"))
+        generated_drafts = {
+            "x_post": "A developed, original X post.",
+            "x_thread": ["Thread part one.", "Thread part two.", "Thread part three."],
+            "linkedin_post": "A developed LinkedIn post with substantive explanation.",
+        }
+
+        async def fake_draft_call(prompt):
+            assert "Do not copy the title" in prompt
+            return json.dumps(generated_drafts)
+
+        monkeypatch.setattr(draft_llm, "_call_openai_compatible", fake_draft_call)
+        assert await draft_llm.generate_draft_variants(
+            "AI Strategy", "How to use AI effectively."
+        ) == generated_drafts
+
+        async def invalid_draft_call(_prompt):
+            return '{"x_post": "only a partial draft"}'
+
+        monkeypatch.setattr(draft_llm, "_call_openai_compatible", invalid_draft_call)
+        with pytest.raises(LLMGenerationError) as error:
+            await draft_llm.generate_draft_variants("AI Strategy", "How to use AI effectively.")
+        assert error.value.status_code == 502
+
+        async def failing_draft_call(_prompt):
+            raise RuntimeError("provider unavailable")
+
+        monkeypatch.setattr(draft_llm, "_call_openai_compatible", failing_draft_call)
+        with pytest.raises(LLMGenerationError) as error:
+            await draft_llm.generate_draft_variants("AI Strategy", "How to use AI effectively.")
+        assert error.value.status_code == 502
 
     asyncio.run(_test())
 
@@ -216,7 +246,17 @@ def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
             for index in range(5)
         ]
 
+    async def fake_generate_drafts(*_args):
+        return {
+            "x_post": "A developed, original X post.",
+            "x_thread": ["Thread part one.", "Thread part two.", "Thread part three."],
+            "linkedin_post": "A developed LinkedIn post with substantive explanation.",
+        }
+
     monkeypatch.setattr(content_router.llm_service, "generate_ideas", fake_generate_ideas)
+    monkeypatch.setattr(
+        content_router.llm_service, "generate_draft_variants", fake_generate_drafts
+    )
 
     # Generate ideas from topic
     gen_ideas_resp = client.post(
@@ -253,6 +293,31 @@ def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
     assert drafts_after_removal.status_code == 200
     assert len(drafts_after_removal.json()) == 3
     assert all(draft["idea_id"] == idea_id for draft in drafts_after_removal.json())
+
+
+def test_draft_generation_provider_error_does_not_create_drafts(client: TestClient, monkeypatch):
+    from app.routers import content as content_router
+
+    idea_response = client.post(
+        "/api/content/ideas",
+        json={"title": "AI strategy", "summary": "An idea summary."},
+    )
+    assert idea_response.status_code == 200
+    idea_id = idea_response.json()["id"]
+
+    async def provider_failure(*_args):
+        raise LLMGenerationError("The AI provider could not generate drafts.")
+
+    monkeypatch.setattr(content_router.llm_service, "generate_draft_variants", provider_failure)
+
+    response = client.post(f"/api/content/ideas/{idea_id}/generate-drafts")
+    assert response.status_code == 502
+    assert "could not generate drafts" in response.json()["detail"]
+    assert client.get("/api/content/drafts").json() == []
+    listed_idea = next(
+        idea for idea in client.get("/api/content/ideas").json() if idea["id"] == idea_id
+    )
+    assert listed_idea["status"] == "idea"
 
 
 def test_idea_generation_returns_clear_error_without_ai(client: TestClient, monkeypatch):

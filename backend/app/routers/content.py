@@ -38,7 +38,7 @@ from app.schemas import (
 from app.services.audit import record_audit_event
 from app.services.draft_image import DraftImageError
 from app.services.linkedin import LinkedInService
-from app.services.llm import IdeaGenerationError, LLMService
+from app.services.llm import LLMGenerationError, LLMService
 from app.services.quality import evaluate_draft_quality
 from app.services.x_oauth import XCredentialError, get_valid_x_access_token
 from app.services.x_service import XAPIError, XService
@@ -170,7 +170,7 @@ async def generate_ideas_from_source(
 
     try:
         generated = await llm_service.generate_ideas(title, content, strategy, analytics_context)
-    except IdeaGenerationError as exc:
+    except LLMGenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     created_ideas: list[ContentIdea] = []
@@ -216,9 +216,12 @@ async def generate_drafts_for_idea(
         )
 
     strategy = get_strategy(session)
-    draft_data = await llm_service.generate_draft_variants(
-        idea.title, idea.summary, idea.proposed_angle, strategy
-    )
+    try:
+        draft_data = await llm_service.generate_draft_variants(
+            idea.title, idea.summary, idea.proposed_angle, strategy
+        )
+    except LLMGenerationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     created_drafts: list[ContentDraft] = []
 

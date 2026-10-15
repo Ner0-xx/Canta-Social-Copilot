@@ -99,7 +99,7 @@ Typical flow:
 3. review generated ideas
 4. create content drafts from the chosen ideas
 
-Idea generation requires a supported AI provider to be configured on the backend. If the provider is unavailable or returns an invalid response, the app reports the problem instead of substituting template ideas. Use **Remove** to archive an unwanted idea from the inbox; any drafts already created from it are preserved.
+Idea and draft generation require a supported AI provider to be configured on the backend. If the provider is unavailable or returns an invalid response, the app reports the problem instead of substituting template content. Selecting **Generate X & LinkedIn Drafts** makes a separate AI request to develop the selected idea into an X post, X thread, and LinkedIn post. If that request fails, no drafts are created and the idea remains available to retry. Use **Remove** to archive an unwanted idea from the inbox; any drafts already created from it are preserved.
 
 ### Content Workspace
 

@@ -12,10 +12,14 @@ from app.schemas import StrategyData
 logger = logging.getLogger(__name__)
 
 
-class IdeaGenerationError(Exception):
+class LLMGenerationError(Exception):
     def __init__(self, message: str, status_code: int = 502):
         self.status_code = status_code
         super().__init__(message)
+
+
+class IdeaGenerationError(LLMGenerationError):
+    pass
 
 
 class LLMService:
@@ -92,22 +96,43 @@ class LLMService:
         if provider in {"openai_compatible", "openai", "openrouter", "custom_api"}:
             try:
                 response_text = await self._call_openai_compatible(prompt)
-                drafts = self._parse_json_drafts(response_text)
-                if drafts:
-                    return drafts
             except Exception as exc:
-                logger.warning(f"External LLM draft call failed: {exc}. Falling back to template generator.")
-
+                logger.exception("External AI draft generation failed")
+                raise LLMGenerationError(
+                    "The AI provider could not generate drafts. Check its backend configuration "
+                    "and try again."
+                ) from exc
         elif provider == "ollama":
             try:
                 response_text = await self._call_ollama(prompt)
-                drafts = self._parse_json_drafts(response_text)
-                if drafts:
-                    return drafts
             except Exception as exc:
-                logger.warning(f"Ollama draft call failed: {exc}. Falling back to template generator.")
+                logger.exception("Ollama draft generation failed")
+                raise LLMGenerationError(
+                    "The AI provider could not generate drafts. Check its backend configuration "
+                    "and try again."
+                ) from exc
+        else:
+            raise LLMGenerationError(
+                "AI-only draft generation is enabled, but no supported AI provider is "
+                "configured.",
+                status_code=503,
+            )
 
-        return self._generate_template_drafts(idea_title, idea_summary, proposed_angle, strategy)
+        drafts = self._parse_json_drafts(response_text)
+        if (
+            drafts is None
+            or not isinstance(drafts.get("x_post"), str)
+            or not drafts["x_post"].strip()
+            or not isinstance(drafts.get("x_thread"), list)
+            or not 3 <= len(drafts["x_thread"]) <= 4
+            or not all(isinstance(post, str) and post.strip() for post in drafts["x_thread"])
+            or not isinstance(drafts.get("linkedin_post"), str)
+            or not drafts["linkedin_post"].strip()
+        ):
+            raise LLMGenerationError(
+                "The AI returned incomplete or invalid drafts. Please try generating them again."
+            )
+        return drafts
 
     async def _call_openai_compatible(self, prompt: str) -> str:
         base_url = self.settings.inference_base_url.rstrip("/") or "https://api.openai.com/v1"
@@ -196,7 +221,10 @@ Return exactly five objects in the JSON array.
         avoided = ", ".join(strategy.voice.avoided_vocabulary) if strategy and strategy.voice else ""
 
         return f"""
-Write social media post variants based on this idea:
+Develop this idea into original, complete social media content. Do not copy the title,
+summary, or proposed angle as the body; use them as a brief, then add useful explanation,
+specific implications, and a clear audience-relevant takeaway. Do not invent facts beyond the
+brief. Return polished, publication-ready text, not a plan or outline.
 Idea Title: {idea_title}
 Summary: {idea_summary}
 Proposed Angle: {proposed_angle}
@@ -206,9 +234,10 @@ Call to Action Style: {cta}
 Avoided Words: {avoided}
 
 Return a JSON object with:
-- "x_post": A concise single post under 270 characters for X.
-- "x_thread": An array of 3-4 post strings forming an insightful thread for X.
-- "linkedin_post": A structured, engaging long-form post for LinkedIn with clear line breaks.
+- "x_post": A complete, standalone X post under 270 characters, with a clear insight and hook.
+- "x_thread": An array of 3-4 complete, connected X posts that develop the idea step by step.
+- "linkedin_post": A fully developed LinkedIn post with a strong opening, substantive explanation,
+  clear line breaks, and a relevant closing question or call to action.
 """
 
     def _parse_json_ideas(self, text: str) -> list[dict[str, Any]]:
@@ -227,41 +256,8 @@ Return a JSON object with:
         if match:
             try:
                 data = json.loads(match.group(0))
-                if isinstance(data, dict) and "x_post" in data:
+                if isinstance(data, dict):
                     return data
             except json.JSONDecodeError:
                 pass
         return None
-
-    def _generate_template_drafts(
-        self,
-        idea_title: str,
-        idea_summary: str,
-        proposed_angle: str,
-        strategy: StrategyData | None,
-    ) -> dict[str, Any]:
-        display_name = strategy.brand.display_name if strategy and strategy.brand.display_name else "Social Copilot"
-        angle = proposed_angle or "Actionable insight"
-
-        return {
-            "x_post": f"💡 {idea_title}\n\n{angle}\n\nWhat are your thoughts on this approach?",
-            "x_thread": [
-                f"1/4 🧵 {idea_title}\n\nHere is what you need to know about this key concept:",
-                f"2/4 {idea_summary}",
-                f"3/4 Key takeaway: {angle}. Small shifts in execution yield major results.",
-                f"4/4 Follow {display_name} for more daily insights on industry strategy. What's your take?",
-            ],
-            "linkedin_post": f"""🚀 {idea_title}
-
-{idea_summary}
-
-💡 Key Takeaway:
-{angle}
-
-Here are 3 core principles to consider:
-1. Ground your strategy in solid data.
-2. Focus on consistent execution over quick hacks.
-3. Measure outcomes and adapt continuously.
-
-What has been your experience with this in your organization? Let's discuss in the comments! 👇""",
-        }
