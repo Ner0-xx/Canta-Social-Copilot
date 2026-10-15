@@ -336,6 +336,16 @@ export function AnalyticsWorkspace() {
                     <div className="metric-post-body">
                       <h3>{post.title || "Untitled post"}</h3>
                       <span className="metric-post-date">{shortDate(post.published_at)}</span>
+                      <div className="metric-publication-meta">
+                        <span className={`metric-publication-badge ${post.publication_method === "manual" ? "manual" : "api"}`}>
+                          {post.publication_method === "manual" ? "Manually confirmed" : "Published via app"}
+                        </span>
+                        {post.platform_post_url && (
+                          <a href={post.platform_post_url} target="_blank" rel="noopener noreferrer">
+                            View post <ArrowUpRight size={12} />
+                          </a>
+                        )}
+                      </div>
                       <div className="metric-input-grid">
                         {([
                           ["impressions", "Views", Eye],

@@ -101,6 +101,7 @@ You can:
 - approve, reject, or move drafts between review states
 - schedule approved posts
 - publish approved posts to the connected X or LinkedIn account
+- manually publish an X draft on X and record its post link when using the secondary fallback
 
 #### Draft lifecycle
 
@@ -114,6 +115,10 @@ A typical content flow:
 6. Scheduled or manually published
 
 **Publishing requirements:** manual publishing uses the connected provider’s official API; it does not merely mark a draft as published. The app must have the corresponding account connected, the draft must be approved, the release level must be **Integrate** (or higher), and **Publishing enabled** must be on. A provider error leaves the draft approved so you can correct the issue and retry. Scheduled publishing also uses the official provider publishing services.
+
+**Manual X fallback:** for an approved X draft, use **Open X to post** and copy the draft text from Canta. After publishing directly on X, select **I posted this on X**, paste the X post URL, and confirm. Canta records the post URL against the draft and marks it published as **Manually confirmed**; this is your confirmation and is not independently verified with X. Manual confirmation still requires **Publishing enabled** and a release level of **Approve** or higher. The normal **Publish via X API** action remains available and continues to publish through X when API access is working.
+
+Manually confirmed X posts appear in Analytics with a link to the post. Enter and save their views, likes, comments, and reposts there. Metrics are user-entered, not fetched or verified by X.
 
 #### Quality check
 

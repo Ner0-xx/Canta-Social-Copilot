@@ -260,6 +260,105 @@ def test_manual_publish_calls_the_selected_provider(client, monkeypatch, platfor
         .one()
     )
     assert publication.platform_post_id == f"{platform}-post-123"
+    if platform == "x":
+        assert publication.platform_post_url == "https://x.com/i/status/x-post-123"
+    generator.close()
+
+
+def test_manual_x_confirmation_links_draft_and_metrics_without_api_connection(client):
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    session.add(AppSettings(id=1, release_level="approve", publishing_enabled=True))
+    idea = ContentIdea(title="Manual X test", summary="Test post", source_type="note")
+    session.add(idea)
+    session.flush()
+    draft = ContentDraft(
+        idea_id=idea.id,
+        platform="x",
+        title="Manual X test",
+        body="Post this directly on X.",
+        status="approved",
+    )
+    session.add(draft)
+    session.commit()
+    draft_id = draft.id
+    generator.close()
+
+    response = client.post(
+        f"/api/content/drafts/{draft_id}/confirm-x-manual",
+        json={"post_url": "https://twitter.com/myaccount/status/123456789?s=20"},
+    )
+
+    assert response.status_code == 200, response.text
+    publication = response.json()
+    assert publication["draft_status"] == "published"
+    assert publication["platform_post_id"] == "123456789"
+    assert publication["platform_post_url"] == "https://x.com/i/status/123456789"
+    assert publication["status"] == "manual_confirmed"
+
+    metrics_response = client.post(
+        "/api/analytics/import/manual",
+        json=[
+            {
+                "platform_post_id": "123456789",
+                "platform": "x",
+                "impressions": 250,
+                "reactions": 20,
+                "comments": 4,
+                "reposts": 3,
+            }
+        ],
+    )
+    assert metrics_response.status_code == 200
+    recent_response = client.get("/api/analytics/recent-publications?platform=x")
+    assert recent_response.status_code == 200
+    recent_post = recent_response.json()[0]
+    assert recent_post["platform_post_id"] == "123456789"
+    assert recent_post["platform_post_url"] == "https://x.com/i/status/123456789"
+    assert recent_post["publication_method"] == "manual"
+    assert recent_post["metrics"] == {
+        "impressions": 250,
+        "reactions": 20,
+        "comments": 4,
+        "reposts": 3,
+    }
+
+    duplicate_response = client.post(
+        f"/api/content/drafts/{draft_id}/confirm-x-manual",
+        json={"post_url": "https://x.com/myaccount/status/123456789"},
+    )
+    assert duplicate_response.status_code == 409
+
+
+def test_manual_x_confirmation_rejects_non_x_links(client):
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    session.add(AppSettings(id=1, release_level="approve", publishing_enabled=True))
+    idea = ContentIdea(title="Manual X test", summary="Test post", source_type="note")
+    session.add(idea)
+    session.flush()
+    draft = ContentDraft(
+        idea_id=idea.id,
+        platform="x",
+        title="Manual X test",
+        body="Post this directly on X.",
+        status="approved",
+    )
+    session.add(draft)
+    session.commit()
+    draft_id = draft.id
+    generator.close()
+
+    response = client.post(
+        f"/api/content/drafts/{draft_id}/confirm-x-manual",
+        json={"post_url": "https://example.com/myaccount/status/123456789"},
+    )
+
+    assert response.status_code == 422
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    assert session.get(ContentDraft, draft_id).status == "approved"
+    assert session.query(PlatformPublication).filter_by(draft_id=draft_id).count() == 0
     generator.close()
 
 

@@ -1,7 +1,15 @@
-import { AlertTriangle, CheckCircle2, Copy, ShieldCheck, Image as ImageIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  Image as ImageIcon,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { CalendarDays, Send } from "lucide-react";
-import { checkDraftQuality, getDrafts, updateDraftStatus, scheduleDraft, publishManual, updateDraft, uploadDraftImage, getExperiments } from "../lib/api";
+import { checkDraftQuality, getDrafts, updateDraftStatus, scheduleDraft, publishManual, confirmManualXPublication, updateDraft, uploadDraftImage, getExperiments } from "../lib/api";
 import type { ContentDraftData, AABExperimentData } from "../types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -19,6 +27,9 @@ export function ContentWorkspace() {
   const [experiments, setExperiments] = useState<AABExperimentData[]>([]);
   const [editExperimentId, setEditExperimentId] = useState<number | undefined>();
   const [editExperimentVariant, setEditExperimentVariant] = useState<string>("");
+  const [manualXDraft, setManualXDraft] = useState<ContentDraftData | null>(null);
+  const [manualXUrl, setManualXUrl] = useState("");
+  const [confirmingManualX, setConfirmingManualX] = useState(false);
 
   const loadDrafts = async () => {
     try {
@@ -119,6 +130,28 @@ export function ContentWorkspace() {
         type: "error",
         text: err instanceof Error ? err.message : "Failed to publish the post.",
       });
+    }
+  };
+
+  const handleConfirmManualX = async () => {
+    if (!manualXDraft) return;
+    setConfirmingManualX(true);
+    try {
+      const publication = await confirmManualXPublication(manualXDraft.id, manualXUrl);
+      setNotice({
+        type: "success",
+        text: `X post recorded: ${publication.platform_post_url}. You can now add its metrics in Analytics.`,
+      });
+      setManualXDraft(null);
+      setManualXUrl("");
+      await loadDrafts();
+    } catch (err) {
+      setNotice({
+        type: "error",
+        text: err instanceof Error ? err.message : "Could not record the X post link.",
+      });
+    } finally {
+      setConfirmingManualX(false);
     }
   };
 
@@ -372,14 +405,93 @@ export function ContentWorkspace() {
                         className="secondary-button small"
                         onClick={() => void handleManualPublish(draft.id)}
                       >
-                        <Send size={13} /> Publish now
+                        <Send size={13} /> {draft.platform === "x" ? "Publish via X API" : "Publish now"}
                       </button>
                     </div>
+                    {draft.platform === "x" && (
+                      <div className="manual-x-actions">
+                        <a
+                          className="secondary-button small"
+                          href="https://x.com/compose/post"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink size={13} /> Open X to post
+                        </a>
+                        <button
+                          type="button"
+                          className="secondary-button small"
+                          onClick={() => {
+                            setManualXDraft(draft);
+                            setManualXUrl("");
+                          }}
+                        >
+                          <CheckCircle2 size={13} /> I posted this on X
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {manualXDraft && (
+        <div className="manual-x-modal-backdrop">
+          <section
+            className="manual-x-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manual-x-title"
+          >
+            <button
+              type="button"
+              className="manual-x-modal-close"
+              onClick={() => setManualXDraft(null)}
+              aria-label="Close confirmation"
+              disabled={confirmingManualX}
+            >
+              <X size={18} />
+            </button>
+            <span className="manual-x-modal-kicker">MANUAL X POST</span>
+            <h2 id="manual-x-title">Nice work. Add the post link.</h2>
+            <p>
+              Paste the URL of the post you just published. Canta will link it to “{manualXDraft.title}”
+              and make it available for manual metrics in Analytics.
+            </p>
+            <label htmlFor="manual-x-post-url">X post URL</label>
+            <input
+              id="manual-x-post-url"
+              type="url"
+              value={manualXUrl}
+              onChange={(event) => setManualXUrl(event.target.value)}
+              placeholder="https://x.com/yourname/status/123456789"
+              autoFocus
+              disabled={confirmingManualX}
+            />
+            <div className="manual-x-modal-hint">
+              Confirm only after the post is live. This records your confirmation; it does not verify the post with X.
+            </div>
+            <div className="manual-x-modal-actions">
+              <button
+                type="button"
+                className="secondary-button small"
+                onClick={() => setManualXDraft(null)}
+                disabled={confirmingManualX}
+              >
+                Not yet
+              </button>
+              <button
+                type="button"
+                className="primary-button small"
+                onClick={() => void handleConfirmManualX()}
+                disabled={!manualXUrl.trim() || confirmingManualX}
+              >
+                {confirmingManualX ? "Recording..." : "Confirm post"}
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </div>

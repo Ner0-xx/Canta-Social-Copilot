@@ -194,13 +194,20 @@ def get_recent_publications(platform: Optional[str] = None, session: Session = D
     response = []
     for pub, draft in results:
         # Check if metric already exists
-        metric = session.query(PostMetric).filter_by(platform_post_id=pub.platform_post_id).first()
+        metric = session.query(PostMetric).filter_by(
+            platform=pub.platform,
+            platform_post_id=pub.platform_post_id,
+        ).first()
         
         response.append({
             "platform_post_id": pub.platform_post_id,
             "platform": pub.platform,
             "title": draft.title,
             "published_at": pub.published_at,
+            "platform_post_url": pub.platform_post_url,
+            "publication_method": (
+                "manual" if pub.status == "manual_confirmed" else "api"
+            ),
             "metrics": {
                 "impressions": metric.impressions if metric else 0,
                 "reactions": metric.reactions if metric else 0,

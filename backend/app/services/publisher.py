@@ -117,6 +117,11 @@ class PublisherService:
                 draft_id=draft.id,
                 platform=job.platform,
                 platform_post_id=platform_post_id,
+                platform_post_url=(
+                    f"https://x.com/i/status/{platform_post_id}"
+                    if job.platform == "x"
+                    else ""
+                ),
                 status="published"
             )
             session.add(pub)

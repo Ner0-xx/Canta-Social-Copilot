@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -64,6 +66,10 @@ class GenerateIdeasRequest(BaseModel):
 class QualityCheckResponse(BaseModel):
     score: float
     warnings: list[str]
+
+
+class ManualXPublicationRequest(BaseModel):
+    post_url: str = Field(min_length=1, max_length=500)
 
 
 @router.post("/ideas", response_model=ContentIdeaData)
@@ -514,6 +520,9 @@ def publish_manual(
         draft_id=draft.id,
         platform=draft.platform,
         platform_post_id=platform_post_id,
+        platform_post_url=(
+            f"https://x.com/i/status/{platform_post_id}" if draft.platform == "x" else ""
+        ),
         status="published",
     )
     session.add(pub)
@@ -529,3 +538,108 @@ def publish_manual(
     session.commit()
     session.refresh(draft)
     return draft
+
+
+@router.post("/drafts/{draft_id}/confirm-x-manual")
+def confirm_x_manual_publication(
+    draft_id: int,
+    payload: ManualXPublicationRequest,
+    session: Annotated[Session, Depends(get_db)],
+) -> dict:
+    draft = session.get(ContentDraft, draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft.platform != "x":
+        raise HTTPException(
+            status_code=400,
+            detail="Manual link confirmation is currently supported only for X drafts.",
+        )
+
+    existing = session.query(PlatformPublication).filter_by(draft_id=draft.id).first()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="This draft already has a recorded publication.",
+        )
+    if draft.status != "approved":
+        raise HTTPException(status_code=400, detail="Only approved X drafts can be confirmed.")
+
+    try:
+        parsed_url = urlsplit(payload.post_url.strip())
+        host = (parsed_url.hostname or "").lower()
+        port = parsed_url.port
+        match = re.fullmatch(
+            r"/(?:[^/]+/status|i/status|i/web/status)/(\d+)/?",
+            parsed_url.path,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Enter a valid X post URL.") from exc
+
+    if (
+        parsed_url.scheme != "https"
+        or host not in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}
+        or port not in {None, 443}
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+        or not match
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Enter a post URL from x.com or twitter.com, such as https://x.com/username/status/123.",
+        )
+
+    post_id = match.group(1)
+    post_already_linked = (
+        session.query(PlatformPublication)
+        .filter_by(platform="x", platform_post_id=post_id)
+        .first()
+    )
+    if post_already_linked:
+        raise HTTPException(
+            status_code=409,
+            detail="This X post is already linked to a publication.",
+        )
+    canonical_url = f"https://x.com/i/status/{post_id}"
+    settings = session.get(AppSettings, 1) or AppSettings(
+        id=1, release_level="observe", publishing_enabled=False
+    )
+    decision = evaluate_action(
+        ActionType.PREPARE_MANUAL_PUBLISH,
+        PolicyContext(
+            release_level=ReleaseLevel.parse(settings.release_level),
+            publishing_enabled=settings.publishing_enabled,
+            approved=True,
+            explicit_user_request=True,
+        ),
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    publication = PlatformPublication(
+        draft_id=draft.id,
+        platform="x",
+        platform_post_id=post_id,
+        platform_post_url=canonical_url,
+        status="manual_confirmed",
+    )
+    draft.status = "published"
+    session.add(publication)
+    record_audit_event(
+        session,
+        event_type="content.draft.manually_published",
+        entity_type="content_draft",
+        entity_id=str(draft.id),
+        summary="X post manually confirmed by user",
+        details={"platform": "x", "post_id": post_id, "post_url": canonical_url},
+    )
+    session.commit()
+    session.refresh(publication)
+    return {
+        "draft_id": draft.id,
+        "draft_status": draft.status,
+        "platform": publication.platform,
+        "platform_post_id": publication.platform_post_id,
+        "platform_post_url": publication.platform_post_url,
+        "status": publication.status,
+        "published_at": publication.published_at,
+    }

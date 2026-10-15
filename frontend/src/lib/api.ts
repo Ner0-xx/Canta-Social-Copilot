@@ -166,6 +166,19 @@ export function publishManual(draftId: number): Promise<ContentDraftData> {
   });
 }
 
+export function confirmManualXPublication(
+  draftId: number,
+  postUrl: string,
+): Promise<{ draft_id: number; platform_post_id: string; platform_post_url: string }> {
+  return request<{ draft_id: number; platform_post_id: string; platform_post_url: string }>(
+    `/api/content/drafts/${draftId}/confirm-x-manual`,
+    {
+      method: "POST",
+      body: JSON.stringify({ post_url: postUrl }),
+    },
+  );
+}
+
 export function getScheduledJobs(): Promise<ScheduledJob[]> {
   return request<ScheduledJob[]>("/api/schedule");
 }

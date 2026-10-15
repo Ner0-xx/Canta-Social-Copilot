@@ -176,6 +176,8 @@ export interface RecentPublicationData {
   platform: string;
   title: string;
   published_at: string;
+  platform_post_url?: string;
+  publication_method?: "api" | "manual";
   metrics: RecentPublicationMetrics;
 }
 
