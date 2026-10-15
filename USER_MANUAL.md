@@ -90,7 +90,7 @@ Adding or syncing a source does not itself publish anything to a social account.
 
 ### Ideas Workspace
 
-This is where the app turns your sources and strategy into draftable ideas.
+This is where the app turns your sources and strategy into draftable ideas. Idea generation receives the saved Brand Identity, relevant Voice settings and examples, audience needs and interests, and content-pillar descriptions, topics, and targets. Draft generation also receives the saved formatting and call-to-action preferences.
 
 Typical flow:
 
@@ -99,9 +99,11 @@ Typical flow:
 3. review generated ideas
 4. create content drafts from the chosen ideas
 
-Idea and draft generation require a supported AI provider to be configured on the backend. If the provider is unavailable or returns an invalid response, the app reports the problem instead of substituting template content. The prompts prioritize clear, engaging writing for African readers, especially Nigerians, while avoiding stereotypes, unexplained abbreviations, and unsupported claims. The AI does not perform live web searches; it must not invent external references or links.
+Idea and draft generation require a supported AI provider to be configured on the backend. If the provider is unavailable or returns an invalid response, the app reports the problem instead of substituting template content. The prompts prioritize clear, engaging writing for African readers, especially Nigerians, while avoiding stereotypes, unexplained abbreviations, and unsupported claims. Brand identity and goals guide how source material is developed: sources provide a direction for discussion, not automatic promotion of another builder or product that conflicts with the identity. The AI does not perform live web searches; it must not invent external references or links.
 
-Selecting **Generate X & LinkedIn Drafts** makes a separate AI request to develop the selected idea into an X post, X thread, and LinkedIn post. If that request fails, no drafts are created and the idea remains available to retry. Use **Remove** to archive an unwanted idea from the inbox; any drafts already created from it are preserved.
+Selecting **Generate X & LinkedIn Drafts** makes a separate AI request to develop the selected idea into an X post, X thread, and LinkedIn post. Each generation request also assembles performance evidence from the last 90 days of published posts that have linked metric records. It compares observed results by platform, post format, and content pillar, and only treats groups with at least three posts as meaningful comparisons. The AI is instructed to treat these results as directional evidence, not guarantees, and to keep the saved Strategy and audience value primary. Metrics remain stored in Canta and are re-read for future requests; this is contextual adaptation, not model retraining. Posts without metrics linked to their recorded publication cannot inform these comparisons.
+
+If that request fails, no drafts are created and the idea remains available to retry. Use **Remove** to archive an unwanted idea from the inbox; any drafts already created from it are preserved.
 
 ### Content Workspace
 

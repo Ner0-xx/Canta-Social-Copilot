@@ -26,6 +26,93 @@ class LLMService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
 
+    @staticmethod
+    def _brand_context(strategy: StrategyData | None) -> str:
+        if strategy is None:
+            return "No brand identity details are configured."
+
+        brand = strategy.brand
+        details = {
+            "Name": brand.display_name,
+            "Purpose": brand.account_purpose,
+            "Biography": brand.biography,
+            "Expertise": ", ".join(brand.expertise),
+            "Offers": ", ".join(brand.offers),
+            "Business goals": ", ".join(brand.business_goals),
+            "Sensitive topics": ", ".join(brand.sensitive_topics),
+            "Required disclosures": ", ".join(brand.required_disclosures),
+        }
+        return "\n".join(f"- {label}: {value}" for label, value in details.items() if value)
+
+    @classmethod
+    def _strategy_context(cls, strategy: StrategyData | None, stage: str) -> str:
+        if strategy is None:
+            return "No saved Strategy profile is configured."
+
+        brand = cls._brand_context(strategy)
+        voice = strategy.voice
+        voice_details = [
+            f"- Tone: {', '.join(voice.tone)}",
+            f"- Preferred vocabulary: {', '.join(voice.preferred_vocabulary)}",
+            f"- Avoided vocabulary: {', '.join(voice.avoided_vocabulary)}",
+        ]
+        if stage == "draft":
+            voice_details.extend(
+                [
+                    f"- Formatting preferences: {voice.formatting_preferences}",
+                    f"- Call-to-action style: {voice.call_to_action_style}",
+                ]
+            )
+        if voice.writing_examples:
+            voice_details.append(
+                "- Writing examples:\n"
+                + "\n".join(
+                    f"  {index}. {example}"
+                    for index, example in enumerate(voice.writing_examples, 1)
+                )
+            )
+
+        audiences = []
+        for audience in strategy.audiences:
+            details = [
+                f"ID: {audience.id}",
+                f"Name: {audience.name}",
+                f"Description: {audience.description}",
+                f"Needs: {', '.join(audience.needs)}",
+                f"Interests: {', '.join(audience.interests)}",
+                f"Desired action: {audience.desired_action}",
+            ]
+            audiences.append(
+                "- "
+                + "; ".join(
+                    value for value in details if value.partition(": ")[2]
+                )
+            )
+
+        pillars = []
+        for pillar in strategy.pillars:
+            details = [
+                f"ID: {pillar.id}",
+                f"Name: {pillar.name}",
+                f"Description: {pillar.description}",
+                f"Target share: {pillar.target_percentage:g}%",
+                f"Example topics: {', '.join(pillar.example_topics)}",
+            ]
+            pillars.append(
+                "- " + "; ".join(value for value in details if value.partition(": ")[2])
+            )
+
+        audience_context = (
+            "\n".join(audiences) if audiences else "- No audience segments configured."
+        )
+        pillar_context = "\n".join(pillars) if pillars else "- No content pillars configured."
+        return (
+            f"Brand Identity:\n{brand}\n"
+            f"Voice ({stage} generation):\n{chr(10).join(voice_details)}\n"
+            f"Audience segments:\n{audience_context}\n"
+            f"Content pillars:\n{pillar_context}"
+        )
+
     def _provider_error(self, action: str, exc: Exception) -> LLMGenerationError:
         if isinstance(exc, httpx.TimeoutException):
             logger.warning("AI provider timed out while %s", action)
@@ -56,10 +143,16 @@ class LLMService:
         )
 
     async def generate_ideas(
-        self, source_title: str, source_content: str, strategy: StrategyData | None = None, analytics_context: str = ""
+        self,
+        source_title: str,
+        source_content: str,
+        strategy: StrategyData | None = None,
+        performance_context: str = "",
     ) -> list[dict[str, Any]]:
         provider = self.settings.inference_provider.lower()
-        prompt = self._build_ideas_prompt(source_title, source_content, strategy, analytics_context)
+        prompt = self._build_ideas_prompt(
+            source_title, source_content, strategy, performance_context
+        )
 
         if provider in {"openai_compatible", "openai", "openrouter", "custom_api"}:
             try:
@@ -102,6 +195,31 @@ class LLMService:
                 "The AI returned an incomplete or invalid idea list. "
                 "Please try generating ideas again."
             )
+
+        valid_ids = {
+            "pillar_id": {pillar.id for pillar in strategy.pillars if pillar.id is not None}
+            if strategy
+            else set(),
+            "audience_id": {
+                audience.id
+                for audience in strategy.audiences
+                if audience.id is not None
+            }
+            if strategy
+            else set(),
+        }
+        for idea in ideas:
+            for field, allowed_ids in valid_ids.items():
+                value = idea.get(field)
+                if value is not None and (
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value not in allowed_ids
+                ):
+                    raise IdeaGenerationError(
+                        f"The AI returned an invalid {field} for a generated idea. "
+                        "Please try generating ideas again."
+                    )
         return ideas
 
     async def generate_draft_variants(
@@ -110,9 +228,12 @@ class LLMService:
         idea_summary: str,
         proposed_angle: str = "",
         strategy: StrategyData | None = None,
+        performance_context: str = "",
     ) -> dict[str, Any]:
         provider = self.settings.inference_provider.lower()
-        prompt = self._build_drafts_prompt(idea_title, idea_summary, proposed_angle, strategy)
+        prompt = self._build_drafts_prompt(
+            idea_title, idea_summary, proposed_angle, strategy, performance_context
+        )
 
         if provider in {"openai_compatible", "openai", "openrouter", "custom_api"}:
             try:
@@ -168,7 +289,7 @@ class LLMService:
             "temperature": 0.7,
         }
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -185,26 +306,24 @@ class LLMService:
             "stream": False,
         }
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json().get("response", "")
 
     def _build_ideas_prompt(
-        self, source_title: str, source_content: str, strategy: StrategyData | None, analytics_context: str = ""
+        self,
+        source_title: str,
+        source_content: str,
+        strategy: StrategyData | None,
+        performance_context: str = "",
     ) -> str:
-        pillars = [p.name for p in strategy.pillars] if strategy and strategy.pillars else ["General"]
-        audiences = (
-            [
-                f"{audience.name}: {audience.description}"
-                for audience in strategy.audiences
-            ]
-            if strategy and strategy.audiences
-            else ["General Audience"]
+        strategy_context = self._strategy_context(strategy, "idea")
+        performance_instruction = (
+            f"\nRecent, linked performance evidence:\n{performance_context}\n"
+            if performance_context
+            else ""
         )
-        tone = ", ".join(strategy.voice.tone) if strategy and strategy.voice and strategy.voice.tone else "Professional"
-
-        analytics_instruction = f"\n{analytics_context}\n" if analytics_context else ""
 
         return f"""
 Analyze the source material and generate exactly 5 distinct, specific social media content ideas.
@@ -224,14 +343,23 @@ Audience and writing guidance:
   no value.
 - Use a specific, honest hook or a reader-relevant question to make each idea compelling. Avoid
   clickbait, stereotypes, forced local references, or unsupported claims.
+- Treat the source as material to learn from and a starting point for discussion, not a topic that
+  must be promoted as-is. Focus each idea on a useful insight or question for this identity's
+  audience and goals.
+- Do not turn an idea into an advertisement, endorsement, or recommendation for another builder,
+  company, product, or service when that would conflict with this identity's purpose, offers, or
+  business goals. Mention another entity only when genuinely needed for a balanced discussion; do
+  not urge readers to use or buy its product.
 - You do not have live web-search access in this request. Do not claim to have researched external
   sources or invent source names, quotations, citations, or links. Use the supplied source as the
   factual anchor; only carry through external references and links that are actually present there.
 
-Brand Tone: {tone}
-Pillars: {', '.join(pillars)}
-Configured Target Audiences: {'; '.join(audiences)}
-{analytics_instruction}
+Use the complete relevant saved Strategy profile below. Balance business goals, audience needs,
+voice, pillar targets, and performance evidence; do not let a short-term metric override the
+identity or audience value. Where evidence supports it, treat ideas as recommendations: build on
+better-performing patterns while keeping ideas distinct and strategically relevant.
+{strategy_context}
+{performance_instruction}
 Source Title: {source_title}
 Source Content: {source_content[:2000]}
 
@@ -240,6 +368,8 @@ Return a JSON array of objects with the following keys:
 - "summary": 2-3 sentence overview
 - "proposed_angle": unique takeaway or hook angle
 - "relevance_score": float between 70.0 and 99.0
+- "pillar_id": the ID of the most relevant configured pillar, or null if none fits
+- "audience_id": the ID of the most relevant configured audience, or null if none fits
 
 Return exactly five objects in the JSON array.
 """
@@ -250,17 +380,13 @@ Return exactly five objects in the JSON array.
         idea_summary: str,
         proposed_angle: str,
         strategy: StrategyData | None,
+        performance_context: str = "",
     ) -> str:
-        tone = ", ".join(strategy.voice.tone) if strategy and strategy.voice and strategy.voice.tone else "Professional, insightful"
-        cta = strategy.voice.call_to_action_style if strategy and strategy.voice else "Ask a thought-provoking question."
-        avoided = ", ".join(strategy.voice.avoided_vocabulary) if strategy and strategy.voice else ""
-        audiences = (
-            [
-                f"{audience.name}: {audience.description}"
-                for audience in strategy.audiences
-            ]
-            if strategy and strategy.audiences
-            else ["General Audience"]
+        strategy_context = self._strategy_context(strategy, "draft")
+        performance_instruction = (
+            f"\nRecent, linked performance evidence:\n{performance_context}\n"
+            if performance_context
+            else ""
         )
 
         return f"""
@@ -279,20 +405,29 @@ Audience and writing guidance:
   no value.
 - Open with a strong, truthful hook that earns attention through relevance, a useful insight, a
   specific tension, or a thoughtful question. Avoid clickbait and forced local references.
+- Treat the idea and source as a direction for discussion, not as an instruction to promote the
+  source itself. Develop a useful point for this identity's audience and goals.
+- Do not make the content an advertisement, endorsement, or recommendation for another builder,
+  company, product, or service when that would conflict with this identity's purpose, offers, or
+  business goals. Mention another entity only when genuinely needed for a balanced discussion; do
+  not urge readers to use or buy its product.
 - Use Nigerian or broader African examples only when they genuinely fit the idea and are supported
   by the brief; do not invent statistics, events, quotations, or claims.
 - You do not have live web-search access in this request. Do not claim to have researched external
   sources or invent source names, quotations, citations, or links. Use the supplied idea as the
   factual anchor; include external references or links only when actually supplied in the brief.
+- Use observed platform and format results only as directional evidence. Adapt each X or LinkedIn
+  version to its own platform's supported patterns; do not promise that a past result will repeat.
+- When supported by the evidence, deliberately adapt successful patterns rather than merely
+  restating analytics. If the evidence is limited, prioritize the saved Strategy and the idea.
 
 Idea Title: {idea_title}
 Summary: {idea_summary}
 Proposed Angle: {proposed_angle}
 
-Tone: {tone}
-Configured Target Audiences: {'; '.join(audiences)}
-Call to Action Style: {cta}
-Avoided Words: {avoided}
+Complete relevant saved Strategy profile:
+{strategy_context}
+{performance_instruction}
 
 Return a JSON object with:
 - "x_post": A complete, standalone X post under 270 characters, with a clear insight and hook.

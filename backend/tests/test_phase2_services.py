@@ -11,14 +11,25 @@ from app.auth import verify_jwt
 from app.config import Settings
 from app.db import get_db
 from app.models import (
+    ContentDraft,
     ContentIdea,
+    ContentPillar,
     OAuthConnection,
     PlatformPublication,
+    PostMetric,
     ScheduledJob,
     Source,
     SourceItem,
 )
+from app.schemas import (
+    AudienceSegmentData,
+    BrandProfileData,
+    ContentPillarData,
+    StrategyData,
+    VoiceProfileData,
+)
 from app.services import source_sync
+from app.services.content_intelligence import build_performance_context
 from app.services.ingestion import compute_content_hash
 from app.services.llm import IdeaGenerationError, LLMGenerationError, LLMService
 from app.services.quality import evaluate_draft_quality
@@ -47,6 +58,236 @@ def test_content_prompts_prioritize_african_and_nigerian_readers_without_fake_ci
 
     assert "exactly 5 distinct" in ideas_prompt
     assert "strong, truthful hook" in drafts_prompt
+
+
+def test_content_prompts_use_brand_identity_and_avoid_conflicting_promotion():
+    llm = LLMService(Settings(inference_provider="openai"))
+    strategy = StrategyData(
+        brand=BrandProfileData(
+            display_name="Canta",
+            account_purpose="Help Nigerian creators grow their own audience.",
+            offers=["Creator strategy workshops"],
+            business_goals=["Grow workshop enrollment"],
+        )
+    )
+
+    ideas_prompt = llm._build_ideas_prompt("Source title", "Source content.", strategy)
+    drafts_prompt = llm._build_drafts_prompt(
+        "Idea title", "Idea summary.", "Proposed angle.", strategy
+    )
+
+    for prompt in (ideas_prompt, drafts_prompt):
+        assert "Help Nigerian creators grow their own audience." in prompt
+        assert "Creator strategy workshops" in prompt
+        assert "Grow workshop enrollment" in prompt
+        assert "direction for discussion" in prompt or "starting point for discussion" in prompt
+        assert "another builder" in prompt
+        assert "when that would conflict with this identity" in prompt
+        assert "urge readers to use or buy its product" in prompt
+
+
+def test_idea_and_draft_prompts_use_complete_relevant_strategy_and_performance():
+    llm = LLMService(Settings(inference_provider="openai"))
+    strategy = StrategyData(
+        brand=BrandProfileData(
+            display_name="Canta",
+            account_purpose="Help creators grow.",
+            biography="A practical creator education brand.",
+            expertise=["Audience development"],
+            offers=["Creator workshops"],
+            business_goals=["Grow workshop enrollment"],
+            sensitive_topics=["Financial claims"],
+            required_disclosures=["Disclose sponsored partnerships"],
+        ),
+        voice=VoiceProfileData(
+            tone=["Warm", "Direct"],
+            preferred_vocabulary=["practical"],
+            avoided_vocabulary=["guaranteed"],
+            formatting_preferences="Use short paragraphs.",
+            call_to_action_style="Invite one thoughtful response.",
+            writing_examples=["Start with the problem readers recognize."],
+        ),
+        audiences=[
+            AudienceSegmentData(
+                id=7,
+                name="Nigerian creators",
+                description="Independent creators building a business.",
+                needs=["Practical distribution advice"],
+                interests=["Audience growth"],
+                desired_action="Try one small experiment",
+            )
+        ],
+        pillars=[
+            ContentPillarData(
+                id=9,
+                name="Creator growth",
+                description="Useful, evidence-led growth advice.",
+                target_percentage=60,
+                example_topics=["Audience retention"],
+            ),
+            ContentPillarData(
+                id=10,
+                name="Brand building",
+                target_percentage=40,
+            ),
+        ],
+    )
+    performance = "Best-supported X format: thread; 4 posts."
+    ideas_prompt = llm._build_ideas_prompt(
+        "Source title", "Source content.", strategy, performance
+    )
+    drafts_prompt = llm._build_drafts_prompt(
+        "Idea title", "Idea summary.", "Proposed angle.", strategy, performance
+    )
+
+    for prompt in (ideas_prompt, drafts_prompt):
+        for detail in (
+            "A practical creator education brand.",
+            "Audience development",
+            "Creator workshops",
+            "Grow workshop enrollment",
+            "Financial claims",
+            "Disclose sponsored partnerships",
+            "practical",
+            "guaranteed",
+            "Start with the problem readers recognize.",
+            "Practical distribution advice",
+            "Audience growth",
+            "Try one small experiment",
+            "ID: 7",
+            "Useful, evidence-led growth advice.",
+            "60%",
+            "Audience retention",
+            "ID: 9",
+            performance,
+        ):
+            assert detail in prompt
+
+    assert "Use short paragraphs." not in ideas_prompt
+    assert "Invite one thoughtful response." not in ideas_prompt
+    assert "Use short paragraphs." in drafts_prompt
+    assert "Invite one thoughtful response." in drafts_prompt
+    assert '"pillar_id"' in ideas_prompt and '"audience_id"' in ideas_prompt
+
+
+def test_performance_context_uses_recent_linked_posts_and_latest_metrics(client):
+    now = datetime.now()
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    winning_pillar = ContentPillar(name="Practical education")
+    other_pillar = ContentPillar(name="Industry commentary")
+    session.add_all([winning_pillar, other_pillar])
+    session.flush()
+    winning_idea = ContentIdea(
+        title="Clear advice",
+        summary="A useful angle.",
+        pillar_id=winning_pillar.id,
+    )
+    other_idea = ContentIdea(
+        title="Industry trends",
+        summary="A different angle.",
+        pillar_id=other_pillar.id,
+    )
+    session.add_all([winning_idea, other_idea])
+    session.flush()
+
+    for index in range(3):
+        thread = ContentDraft(
+            idea_id=winning_idea.id,
+            platform="x",
+            variant_type="thread",
+            title=f"Useful thread {index}",
+            body="A clear, practical example for readers.",
+        )
+        post = ContentDraft(
+            idea_id=other_idea.id,
+            platform="x",
+            variant_type="post",
+            title=f"Industry post {index}",
+            body="A short industry observation.",
+        )
+        session.add_all([thread, post])
+        session.flush()
+        thread_id = f"thread-{index}"
+        post_id = f"post-{index}"
+        session.add_all(
+            [
+                PlatformPublication(
+                    draft_id=thread.id,
+                    platform="x",
+                    platform_post_id=thread_id,
+                    published_at=now - timedelta(days=index + 1),
+                ),
+                PlatformPublication(
+                    draft_id=post.id,
+                    platform="x",
+                    platform_post_id=post_id,
+                    published_at=now - timedelta(days=index + 1),
+                ),
+                PostMetric(
+                    platform="x",
+                    platform_post_id=thread_id,
+                    impressions=100,
+                    reactions=20,
+                    imported_at=now - timedelta(hours=1),
+                ),
+                PostMetric(
+                    platform="x",
+                    platform_post_id=post_id,
+                    impressions=100,
+                    reactions=1,
+                    imported_at=now - timedelta(hours=1),
+                ),
+            ]
+        )
+
+    session.add(
+        PostMetric(
+            platform="x",
+            platform_post_id="thread-0",
+            impressions=100,
+            reactions=1,
+            imported_at=now - timedelta(days=2),
+        )
+    )
+    expired_draft = ContentDraft(
+        idea_id=winning_idea.id,
+        platform="x",
+        variant_type="thread",
+        title="Old thread",
+        body="Out-of-window high performer.",
+    )
+    session.add(expired_draft)
+    session.flush()
+    session.add_all(
+        [
+            PlatformPublication(
+                draft_id=expired_draft.id,
+                platform="x",
+                platform_post_id="old-thread",
+                published_at=now - timedelta(days=100),
+            ),
+            PostMetric(
+                platform="x",
+                platform_post_id="old-thread",
+                impressions=100,
+                reactions=99,
+                imported_at=now,
+            ),
+        ]
+    )
+    session.commit()
+
+    context = build_performance_context(session, as_of=now)
+    generator.close()
+
+    assert "last 90 days" in context
+    assert "X / thread: 3 posts" in context
+    assert "X / post: 3 posts" in context
+    assert "Best-supported X format in this sample: thread" in context
+    assert "Best-supported pillar in this sample: Practical education" in context
+    assert "Useful thread 0" in context
+    assert "Old thread" not in context
 
 
 def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
@@ -330,7 +571,9 @@ def test_scheduled_source_sync_continues_after_a_source_failure(client: TestClie
 def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
     from app.routers import content as content_router
 
-    async def fake_generate_ideas(*_args):
+    async def fake_generate_ideas(*args):
+        assert len(args) == 4
+        assert "No linked performance metrics" in args[3]
         return [
             {
                 "title": f"Idea {index}",
@@ -341,7 +584,9 @@ def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
             for index in range(5)
         ]
 
-    async def fake_generate_drafts(*_args):
+    async def fake_generate_drafts(*args):
+        assert len(args) == 5
+        assert "No linked performance metrics" in args[4]
         return {
             "x_post": "A developed, original X post.",
             "x_thread": ["Thread part one.", "Thread part two.", "Thread part three."],

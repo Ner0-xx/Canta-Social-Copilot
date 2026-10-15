@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -19,10 +19,8 @@ from app.models import (
     AppSettings,
     ContentDraft,
     ContentIdea,
-    ContentPillar,
     OAuthConnection,
     PlatformPublication,
-    PostMetric,
     ScheduledJob,
     SourceItem,
 )
@@ -37,6 +35,7 @@ from app.schemas import (
     DraftUpdateRequest,
 )
 from app.services.audit import record_audit_event
+from app.services.content_intelligence import build_performance_context
 from app.services.draft_image import DraftImageError
 from app.services.linkedin import LinkedInService
 from app.services.llm import LLMGenerationError, LLMService
@@ -149,28 +148,12 @@ async def generate_ideas_from_source(
 
     strategy = get_strategy(session)
     
-    analytics_context = ""
-    try:
-        top_pillars = session.query(
-            ContentIdea.pillar_id,
-            func.sum(PostMetric.impressions).label('impressions')
-        ).select_from(PostMetric).join(
-            PlatformPublication, PostMetric.platform_post_id == PlatformPublication.platform_post_id
-        ).join(
-            ContentDraft, PlatformPublication.draft_id == ContentDraft.id
-        ).join(
-            ContentIdea, ContentDraft.idea_id == ContentIdea.id
-        ).group_by(ContentIdea.pillar_id).order_by(desc('impressions')).limit(2).all()
-        
-        if top_pillars:
-            pillar_ids = [p[0] for p in top_pillars]
-            top_pillar_names = [p.name for p in session.query(ContentPillar).filter(ContentPillar.id.in_(pillar_ids)).all()]
-            analytics_context = f"Based on recent analytics, your best performing content pillars are: {', '.join(top_pillar_names)}. Tailor ideas towards these successful areas if possible."
-    except Exception as e:
-        logger.warning(f"Could not fetch analytics context: {e}")
+    performance_context = build_performance_context(session)
 
     try:
-        generated = await llm_service.generate_ideas(title, content, strategy, analytics_context)
+        generated = await llm_service.generate_ideas(
+            title, content, strategy, performance_context
+        )
     except LLMGenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -217,9 +200,14 @@ async def generate_drafts_for_idea(
         )
 
     strategy = get_strategy(session)
+    performance_context = build_performance_context(session)
     try:
         draft_data = await llm_service.generate_draft_variants(
-            idea.title, idea.summary, idea.proposed_angle, strategy
+            idea.title,
+            idea.summary,
+            idea.proposed_angle,
+            strategy,
+            performance_context,
         )
     except LLMGenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
