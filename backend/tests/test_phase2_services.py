@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -71,7 +72,7 @@ def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
             raise RuntimeError("provider unavailable")
 
         monkeypatch.setattr(ai_llm, "_call_openai_compatible", failing_call)
-        with pytest.raises(IdeaGenerationError) as error:
+        with pytest.raises(LLMGenerationError) as error:
             await ai_llm.generate_ideas("AI Trends 2026", "Content about recent advances in AI.")
         assert error.value.status_code == 502
 
@@ -112,6 +113,74 @@ def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
         assert error.value.status_code == 502
 
     asyncio.run(_test())
+
+
+def test_llm_provider_errors_distinguish_timeout_and_unavailable_model(monkeypatch):
+    llm = LLMService(Settings(inference_provider="openai"))
+
+    async def timed_out(_prompt):
+        raise httpx.ReadTimeout("provider response timed out")
+
+    monkeypatch.setattr(llm, "_call_openai_compatible", timed_out)
+
+    async def check_timeout():
+        with pytest.raises(LLMGenerationError) as error:
+            await llm.generate_ideas("AI Trends", "Source content.")
+        assert error.value.status_code == 504
+        assert "timed out after 60 seconds" in str(error.value)
+
+    asyncio.run(check_timeout())
+
+    request = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+    response = httpx.Response(503, request=request)
+    unavailable_error = httpx.HTTPStatusError(
+        "Provider unavailable", request=request, response=response
+    )
+
+    async def unavailable(_prompt):
+        raise unavailable_error
+
+    monkeypatch.setattr(llm, "_call_openai_compatible", unavailable)
+
+    async def check_unavailable():
+        with pytest.raises(LLMGenerationError) as error:
+            await llm.generate_ideas("AI Trends", "Source content.")
+        assert error.value.status_code == 503
+        assert "currently unavailable" in str(error.value)
+
+    asyncio.run(check_unavailable())
+
+
+def test_openai_compatible_request_timeout_is_60_seconds(monkeypatch):
+    timeouts = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            timeouts.append(timeout)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.llm.httpx.AsyncClient", FakeAsyncClient)
+    result = asyncio.run(
+        LLMService(Settings(inference_provider="openai"))._call_openai_compatible("prompt")
+    )
+
+    assert result == "ok"
+    assert timeouts == [60.0]
 
 
 def test_quality_evaluator():

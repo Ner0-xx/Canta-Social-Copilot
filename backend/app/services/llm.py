@@ -26,6 +26,35 @@ class LLMService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
 
+    def _provider_error(self, action: str, exc: Exception) -> LLMGenerationError:
+        if isinstance(exc, httpx.TimeoutException):
+            logger.warning("AI provider timed out while %s", action)
+            return LLMGenerationError(
+                "The AI provider request timed out after 60 seconds. Please try again.",
+                status_code=504,
+            )
+
+        if isinstance(exc, httpx.HTTPStatusError):
+            status_code = exc.response.status_code
+            if status_code in {404, 503}:
+                logger.warning("AI provider is unavailable while %s (HTTP %s)", action, status_code)
+                return LLMGenerationError(
+                    "The configured AI model or provider is currently unavailable. Check that "
+                    "the model ID is correct and enabled for your account, then try again later.",
+                    status_code=503,
+                )
+            if status_code == 429:
+                logger.warning("AI provider rate limit reached while %s", action)
+                return LLMGenerationError(
+                    "The AI provider is rate-limiting requests. Wait a little while, then try again.",
+                    status_code=429,
+                )
+
+        logger.exception("AI provider failed while %s", action)
+        return LLMGenerationError(
+            f"The AI provider could not {action}. Check its backend configuration and try again."
+        )
+
     async def generate_ideas(
         self, source_title: str, source_content: str, strategy: StrategyData | None = None, analytics_context: str = ""
     ) -> list[dict[str, Any]]:
@@ -36,20 +65,12 @@ class LLMService:
             try:
                 response_text = await self._call_openai_compatible(prompt)
             except Exception as exc:
-                logger.exception("External AI idea generation failed")
-                raise IdeaGenerationError(
-                    "The AI provider could not generate ideas. Check its backend configuration "
-                    "and try again."
-                ) from exc
+                raise self._provider_error("generate ideas", exc) from exc
         elif provider == "ollama":
             try:
                 response_text = await self._call_ollama(prompt)
             except Exception as exc:
-                logger.exception("Ollama idea generation failed")
-                raise IdeaGenerationError(
-                    "The AI provider could not generate ideas. Check its backend configuration "
-                    "and try again."
-                ) from exc
+                raise self._provider_error("generate ideas", exc) from exc
         else:
             raise IdeaGenerationError(
                 "AI-only idea generation is enabled, but no supported AI provider is "
@@ -97,20 +118,12 @@ class LLMService:
             try:
                 response_text = await self._call_openai_compatible(prompt)
             except Exception as exc:
-                logger.exception("External AI draft generation failed")
-                raise LLMGenerationError(
-                    "The AI provider could not generate drafts. Check its backend configuration "
-                    "and try again."
-                ) from exc
+                raise self._provider_error("generate drafts", exc) from exc
         elif provider == "ollama":
             try:
                 response_text = await self._call_ollama(prompt)
             except Exception as exc:
-                logger.exception("Ollama draft generation failed")
-                raise LLMGenerationError(
-                    "The AI provider could not generate drafts. Check its backend configuration "
-                    "and try again."
-                ) from exc
+                raise self._provider_error("generate drafts", exc) from exc
         else:
             raise LLMGenerationError(
                 "AI-only draft generation is enabled, but no supported AI provider is "
@@ -155,7 +168,7 @@ class LLMService:
             "temperature": 0.7,
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -172,7 +185,7 @@ class LLMService:
             "stream": False,
         }
 
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json().get("response", "")
