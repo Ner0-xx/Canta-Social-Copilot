@@ -23,6 +23,7 @@ from app.models import (
     OAuthConnection,
     PlatformPublication,
     PostMetric,
+    ScheduledJob,
     SourceItem,
 )
 from app.policy import ActionType, PolicyContext, ReleaseLevel, evaluate_action
@@ -297,6 +298,52 @@ def list_drafts(session: Session = Depends(get_db)) -> list[ContentDraft]:
             select(ContentDraft).order_by(ContentDraft.created_at.desc(), ContentDraft.id.desc())
         ).all()
     )
+
+
+@router.delete("/drafts/{draft_id}")
+def delete_draft(
+    draft_id: int, session: Annotated[Session, Depends(get_db)]
+) -> dict[str, bool]:
+    draft = session.get(ContentDraft, draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    if draft.status in {"scheduled", "published"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Only unpublished drafts without an active schedule can be deleted.",
+        )
+
+    scheduled_jobs = list(
+        session.scalars(select(ScheduledJob).where(ScheduledJob.draft_id == draft.id)).all()
+    )
+    if any(job.status == "pending" for job in scheduled_jobs):
+        raise HTTPException(
+            status_code=409,
+            detail="Cancel this draft's pending schedule before deleting it.",
+        )
+
+    if session.scalar(
+        select(PlatformPublication.id).where(PlatformPublication.draft_id == draft.id).limit(1)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Drafts with publication records cannot be deleted.",
+        )
+
+    record_audit_event(
+        session,
+        event_type="content.draft.deleted",
+        entity_type="content_draft",
+        entity_id=str(draft.id),
+        summary="Draft deleted",
+        details={"title": draft.title, "platform": draft.platform, "status": draft.status},
+    )
+    for job in scheduled_jobs:
+        session.delete(job)
+    session.delete(draft)
+    session.commit()
+    return {"deleted": True}
 
 
 @router.post("/ideas/{idea_id}/drafts", response_model=ContentDraftData)

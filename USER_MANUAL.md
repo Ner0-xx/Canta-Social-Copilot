@@ -108,6 +108,7 @@ This is the main content production area.
 You can:
 
 - view all drafts
+- permanently delete unpublished drafts that are no longer needed
 - filter by platform
 - check quality scores
 - edit draft bodies
@@ -116,6 +117,8 @@ You can:
 - schedule approved posts
 - publish approved posts to the connected X or LinkedIn account
 - manually publish an X draft on X and record its post link when using the secondary fallback
+
+**Deleting drafts:** Use **Delete draft** on an unpublished draft you no longer need. A confirmation appears before deletion. Drafts with a pending schedule or publication record cannot be deleted. A draft whose schedule was cancelled can be deleted; the cancellation audit event is retained.
 
 #### Draft lifecycle
 

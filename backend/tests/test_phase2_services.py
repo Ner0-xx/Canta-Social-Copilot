@@ -9,7 +9,14 @@ from sqlalchemy.orm import sessionmaker
 from app.auth import verify_jwt
 from app.config import Settings
 from app.db import get_db
-from app.models import ContentIdea, OAuthConnection, Source, SourceItem
+from app.models import (
+    ContentIdea,
+    OAuthConnection,
+    PlatformPublication,
+    ScheduledJob,
+    Source,
+    SourceItem,
+)
 from app.services import source_sync
 from app.services.ingestion import compute_content_hash
 from app.services.llm import IdeaGenerationError, LLMGenerationError, LLMService
@@ -318,6 +325,82 @@ def test_draft_generation_provider_error_does_not_create_drafts(client: TestClie
         idea for idea in client.get("/api/content/ideas").json() if idea["id"] == idea_id
     )
     assert listed_idea["status"] == "idea"
+
+
+def test_delete_unpublished_draft_and_block_pending_or_published(client: TestClient):
+    from app.models import ContentDraft
+
+    idea = client.post(
+        "/api/content/ideas",
+        json={"title": "Deletion test", "summary": "An idea for testing."},
+    ).json()
+    created_drafts = []
+    for platform in ("x", "linkedin", "x", "linkedin"):
+        response = client.post(
+            f"/api/content/ideas/{idea['id']}/drafts",
+            json={"platform": platform, "title": "Test draft", "body": "Draft body."},
+        )
+        assert response.status_code == 200
+        created_drafts.append(response.json()["id"])
+
+    session_generator = client.app.dependency_overrides[get_db]()
+    session = next(session_generator)
+    session.add(
+        ScheduledJob(
+            draft_id=created_drafts[0],
+            platform="x",
+            scheduled_at=datetime.now() + timedelta(hours=1),
+            status="cancelled",
+        )
+    )
+    session.add(
+        PlatformPublication(
+            draft_id=created_drafts[1],
+            platform="linkedin",
+            platform_post_id="published-post-1",
+        )
+    )
+    session.get(ContentDraft, created_drafts[1]).status = "published"
+    session.commit()
+    session_generator.close()
+
+    # Cancelled schedule history does not make an unpublished draft undeletable.
+    delete_cancelled_schedule_draft = client.delete(
+        f"/api/content/drafts/{created_drafts[0]}"
+    )
+    assert delete_cancelled_schedule_draft.status_code == 200
+    assert delete_cancelled_schedule_draft.json() == {"deleted": True}
+
+    # Active schedules and publication history must remain protected.
+    session_generator = client.app.dependency_overrides[get_db]()
+    session = next(session_generator)
+    session.add(
+        ScheduledJob(
+            draft_id=created_drafts[2],
+            platform="x",
+            scheduled_at=datetime.now() + timedelta(hours=1),
+            status="pending",
+        )
+    )
+    session.commit()
+    session_generator.close()
+
+    pending_delete = client.delete(f"/api/content/drafts/{created_drafts[2]}")
+    assert pending_delete.status_code == 409
+    assert "pending schedule" in pending_delete.json()["detail"]
+
+    published_delete = client.delete(f"/api/content/drafts/{created_drafts[1]}")
+    assert published_delete.status_code == 409
+    assert "unpublished drafts" in published_delete.json()["detail"]
+
+    # An unpublished draft without active schedule history can be removed after approval.
+    approved = client.post(
+        f"/api/content/drafts/{created_drafts[3]}/transition",
+        json={"status": "approved"},
+    )
+    assert approved.status_code == 200
+    approved_delete = client.delete(f"/api/content/drafts/{created_drafts[3]}")
+    assert approved_delete.status_code == 200
 
 
 def test_idea_generation_returns_clear_error_without_ai(client: TestClient, monkeypatch):

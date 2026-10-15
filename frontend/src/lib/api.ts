@@ -136,6 +136,12 @@ export function getDrafts(): Promise<ContentDraftData[]> {
   return request<ContentDraftData[]>("/api/content/drafts");
 }
 
+export function deleteDraft(draftId: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/api/content/drafts/${draftId}`, {
+    method: "DELETE",
+  });
+}
+
 export function updateDraftStatus(draftId: number, status: string): Promise<ContentDraftData> {
   return request<ContentDraftData>(`/api/content/drafts/${draftId}/transition`, {
     method: "POST",

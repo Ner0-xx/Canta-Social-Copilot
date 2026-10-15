@@ -5,11 +5,12 @@ import {
   ExternalLink,
   ShieldCheck,
   Image as ImageIcon,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CalendarDays, Send } from "lucide-react";
-import { checkDraftQuality, getDrafts, updateDraftStatus, scheduleDraft, publishManual, confirmManualXPublication, updateDraft, uploadDraftImage, getExperiments } from "../lib/api";
+import { checkDraftQuality, getDrafts, updateDraftStatus, scheduleDraft, publishManual, confirmManualXPublication, updateDraft, uploadDraftImage, getExperiments, deleteDraft } from "../lib/api";
 import type { ContentDraftData, AABExperimentData } from "../types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -30,6 +31,7 @@ export function ContentWorkspace() {
   const [manualXDraft, setManualXDraft] = useState<ContentDraftData | null>(null);
   const [manualXUrl, setManualXUrl] = useState("");
   const [confirmingManualX, setConfirmingManualX] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState<number | null>(null);
 
   const loadDrafts = async () => {
     try {
@@ -165,6 +167,30 @@ export function ContentWorkspace() {
       setNotice({ type: "error", text: "Failed to upload image." });
     } finally {
       setUploadingId(null);
+    }
+  };
+
+  const handleDeleteDraft = async (draft: ContentDraftData) => {
+    if (
+      !window.confirm(
+        `Permanently delete "${draft.title}"? This only removes the unpublished draft from Canta; any published social post is not affected.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingDraftId(draft.id);
+    try {
+      await deleteDraft(draft.id);
+      setDrafts((current) => current.filter((item) => item.id !== draft.id));
+      setNotice({ type: "success", text: "Draft deleted." });
+    } catch (err) {
+      setNotice({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to delete draft.",
+      });
+    } finally {
+      setDeletingDraftId(null);
     }
   };
 
@@ -431,6 +457,17 @@ export function ContentWorkspace() {
                       </div>
                     )}
                   </>
+                )}
+                {draft.status !== "scheduled" && draft.status !== "published" && (
+                  <button
+                    type="button"
+                    className="secondary-button small danger-button"
+                    onClick={() => void handleDeleteDraft(draft)}
+                    disabled={deletingDraftId === draft.id}
+                  >
+                    <Trash2 size={13} />
+                    {deletingDraftId === draft.id ? "Deleting..." : "Delete draft"}
+                  </button>
                 )}
               </div>
             </div>
