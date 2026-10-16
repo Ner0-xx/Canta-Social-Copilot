@@ -164,21 +164,35 @@ export interface AnalyticsDashboardData {
   }>;
 }
 
-export interface RecentPublicationMetrics {
+export type MetricCheckpoint = "24h" | "7d" | "30d" | "90d";
+
+export interface PublicationMetricSnapshot {
+  checkpoint: MetricCheckpoint;
   impressions: number;
   reactions: number;
   comments: number;
   reposts: number;
+  clicks: number;
+  recorded_at: string;
+  is_late: boolean;
 }
 
-export interface RecentPublicationData {
+export interface PublishedPublicationData {
+  publication_id: number;
+  draft_id: number;
   platform_post_id: string;
   platform: string;
   title: string;
   published_at: string;
   platform_post_url?: string;
-  publication_method?: "api" | "manual";
-  metrics: RecentPublicationMetrics;
+  metrics: Partial<Record<MetricCheckpoint, PublicationMetricSnapshot>>;
+}
+
+export interface PublishedPublicationsPage {
+  items: PublishedPublicationData[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export interface DraftReplyData {

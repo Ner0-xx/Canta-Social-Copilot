@@ -25,6 +25,7 @@ export function ContentWorkspace() {
   const [editBody, setEditBody] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [experiments, setExperiments] = useState<AABExperimentData[]>([]);
   const [editExperimentId, setEditExperimentId] = useState<number | undefined>();
   const [editExperimentVariant, setEditExperimentVariant] = useState<string>("");
@@ -160,13 +161,19 @@ export function ContentWorkspace() {
   const handleImageUpload = async (draftId: number, file: File) => {
     try {
       setUploadingId(draftId);
-      await uploadDraftImage(draftId, file);
-      setNotice({ type: "success", text: "Image uploaded successfully." });
+      setUploadProgress(1);
+      const result = await uploadDraftImage(draftId, file, setUploadProgress);
+      setUploadProgress(100);
+      setNotice({ type: "success", text: result.notice });
       await loadDrafts();
-    } catch {
-      setNotice({ type: "error", text: "Failed to upload image." });
+    } catch (err) {
+      setNotice({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to upload image.",
+      });
     } finally {
       setUploadingId(null);
+      setUploadProgress(null);
     }
   };
 
@@ -368,18 +375,33 @@ export function ContentWorkspace() {
                   <ShieldCheck size={13} /> Check Quality
                 </button>
                 
-                <label className="secondary-button small cursor-pointer">
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageUpload(draft.id, file);
-                    }}
-                  />
-                  <ImageIcon size={13} /> {uploadingId === draft.id ? "Uploading..." : "Add Image"}
-                </label>
+                <div className="draft-image-upload">
+                  <label className="secondary-button small cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploadingId !== null}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleImageUpload(draft.id, file);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <ImageIcon size={13} />
+                    {uploadingId === draft.id ? "Uploading..." : "Add Image"}
+                  </label>
+                  {uploadingId === draft.id && uploadProgress !== null && (
+                    <div className="draft-image-progress">
+                      <span>Uploading image: {uploadProgress}%</span>
+                      <progress
+                        aria-label="Image upload progress"
+                        max={100}
+                        value={uploadProgress}
+                      />
+                    </div>
+                  )}
+                </div>
 
                 {draft.status === "draft" && (
                   <button

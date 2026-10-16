@@ -16,7 +16,7 @@ from app.models import (
     ContentPillar,
     OAuthConnection,
     PlatformPublication,
-    PostMetric,
+    PublicationMetricSnapshot,
     ScheduledJob,
     Source,
     SourceItem,
@@ -210,46 +210,39 @@ def test_performance_context_uses_recent_linked_posts_and_latest_metrics(client)
         session.flush()
         thread_id = f"thread-{index}"
         post_id = f"post-{index}"
+        thread_publication = PlatformPublication(
+            draft_id=thread.id,
+            platform="x",
+            platform_post_id=thread_id,
+            published_at=now - timedelta(days=index + 1),
+        )
+        post_publication = PlatformPublication(
+            draft_id=post.id,
+            platform="x",
+            platform_post_id=post_id,
+            published_at=now - timedelta(days=index + 1),
+        )
+        session.add_all([thread_publication, post_publication])
+        session.flush()
         session.add_all(
             [
-                PlatformPublication(
-                    draft_id=thread.id,
-                    platform="x",
-                    platform_post_id=thread_id,
-                    published_at=now - timedelta(days=index + 1),
-                ),
-                PlatformPublication(
-                    draft_id=post.id,
-                    platform="x",
-                    platform_post_id=post_id,
-                    published_at=now - timedelta(days=index + 1),
-                ),
-                PostMetric(
-                    platform="x",
-                    platform_post_id=thread_id,
+                PublicationMetricSnapshot(
+                    publication_id=thread_publication.id,
+                    checkpoint="7d",
                     impressions=100,
                     reactions=20,
-                    imported_at=now - timedelta(hours=1),
+                    recorded_at=now - timedelta(hours=1),
                 ),
-                PostMetric(
-                    platform="x",
-                    platform_post_id=post_id,
+                PublicationMetricSnapshot(
+                    publication_id=post_publication.id,
+                    checkpoint="7d",
                     impressions=100,
                     reactions=1,
-                    imported_at=now - timedelta(hours=1),
+                    recorded_at=now - timedelta(hours=1),
                 ),
             ]
         )
 
-    session.add(
-        PostMetric(
-            platform="x",
-            platform_post_id="thread-0",
-            impressions=100,
-            reactions=1,
-            imported_at=now - timedelta(days=2),
-        )
-    )
     expired_draft = ContentDraft(
         idea_id=winning_idea.id,
         platform="x",
@@ -259,20 +252,22 @@ def test_performance_context_uses_recent_linked_posts_and_latest_metrics(client)
     )
     session.add(expired_draft)
     session.flush()
+    expired_publication = PlatformPublication(
+        draft_id=expired_draft.id,
+        platform="x",
+        platform_post_id="old-thread",
+        published_at=now - timedelta(days=100),
+    )
+    session.add(expired_publication)
+    session.flush()
     session.add_all(
         [
-            PlatformPublication(
-                draft_id=expired_draft.id,
-                platform="x",
-                platform_post_id="old-thread",
-                published_at=now - timedelta(days=100),
-            ),
-            PostMetric(
-                platform="x",
-                platform_post_id="old-thread",
+            PublicationMetricSnapshot(
+                publication_id=expired_publication.id,
+                checkpoint="7d",
                 impressions=100,
                 reactions=99,
-                imported_at=now,
+                recorded_at=now,
             ),
         ]
     )
@@ -282,12 +277,59 @@ def test_performance_context_uses_recent_linked_posts_and_latest_metrics(client)
     generator.close()
 
     assert "last 90 days" in context
-    assert "X / thread: 3 posts" in context
-    assert "X / post: 3 posts" in context
-    assert "Best-supported X format in this sample: thread" in context
-    assert "Best-supported pillar in this sample: Practical education" in context
+    assert "7d, x, thread: 3 posts" in context
+    assert "7d, x, post: 3 posts" in context
+    assert "Best-supported x format at 7d: thread" in context
+    assert "Best-supported x pillar at 7d: Practical education" in context
     assert "Useful thread 0" in context
     assert "Old thread" not in context
+
+
+def test_draft_image_upload_falls_back_to_local_storage_with_status(
+    client: TestClient, monkeypatch, tmp_path
+):
+    from app.routers import content as content_router
+
+    monkeypatch.chdir(tmp_path)
+
+    idea = client.post(
+        "/api/content/ideas",
+        json={"title": "Image upload test", "summary": "Test image persistence."},
+    ).json()
+    draft = client.post(
+        f"/api/content/ideas/{idea['id']}/drafts",
+        json={
+            "platform": "linkedin",
+            "title": "Image upload test",
+            "body": "A test post.",
+        },
+    ).json()
+
+    class FailingStorage:
+        def from_(self, _bucket):
+            return self
+
+        def upload(self, **_kwargs):
+            raise RuntimeError("Storage policy denied upload")
+
+    class FailingSupabase:
+        storage = FailingStorage()
+
+    monkeypatch.setattr(content_router, "get_supabase", lambda: FailingSupabase())
+    response = client.post(
+        f"/api/content/drafts/{draft['id']}/image",
+        files={"file": ("sample.png", b"image-bytes", "image/png")},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["x-image-storage"] == "local_fallback"
+    assert response.headers["x-image-notice"] == (
+        "Supabase upload failed; redirecting to local storage. Image was saved locally."
+    )
+    saved_draft = response.json()
+    assert saved_draft["image_path"].startswith("/uploads/")
+    image_file = tmp_path / "data" / "uploads" / saved_draft["image_path"].split("/")[-1]
+    assert image_file.read_bytes() == b"image-bytes"
 
 
 def test_idea_generation_requires_ai_and_requests_five_ideas(monkeypatch):
@@ -573,7 +615,7 @@ def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
 
     async def fake_generate_ideas(*args):
         assert len(args) == 4
-        assert "No linked performance metrics" in args[3]
+        assert "No per-checkpoint metrics" in args[3]
         return [
             {
                 "title": f"Idea {index}",
@@ -586,7 +628,7 @@ def test_idea_and_draft_generation_api(client: TestClient, monkeypatch):
 
     async def fake_generate_drafts(*args):
         assert len(args) == 5
-        assert "No linked performance metrics" in args[4]
+        assert "No per-checkpoint metrics" in args[4]
         return {
             "x_post": "A developed, original X post.",
             "x_thread": ["Thread part one.", "Thread part two.", "Thread part three."],

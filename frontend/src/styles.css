@@ -2541,6 +2541,25 @@ select:focus {
   border-top: 1px solid #edf2f0;
 }
 
+.draft-image-upload {
+  display: grid;
+  gap: 6px;
+}
+
+.draft-image-progress {
+  display: grid;
+  min-width: 150px;
+  gap: 3px;
+  color: #53645b;
+  font-size: 11px;
+}
+
+.draft-image-progress progress {
+  width: 100%;
+  height: 8px;
+  accent-color: #21845a;
+}
+
 /* Authentication */
 .login-screen {
   display: grid;
@@ -4961,6 +4980,247 @@ select:focus-visible {
   grid-template-columns: 1fr 1fr;
   gap: 7px;
   margin-top: 12px;
+}
+
+.checkpoint-dashboard-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px 16px;
+  background: #f7faf8;
+  border: 1px solid #e3ebe6;
+  border-radius: 12px;
+}
+
+.checkpoint-dashboard-controls label,
+.checkpoint-editor > label {
+  display: grid;
+  gap: 5px;
+  color: #52635a;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.checkpoint-dashboard-controls select,
+.checkpoint-editor select {
+  min-height: 36px;
+  padding: 6px 30px 6px 9px;
+  color: #253b30;
+  background: #fff;
+  border: 1px solid #cfdcd4;
+  border-radius: 7px;
+}
+
+.checkpoint-dashboard-controls > span {
+  margin: 0 0 9px auto;
+  color: #708078;
+  font-size: 12px;
+}
+
+.publication-metrics-panel {
+  margin-top: 18px;
+  padding: 18px;
+}
+
+.publication-metrics-panel .manual-log-heading {
+  align-items: center;
+}
+
+.metric-post-body {
+  display: grid;
+  gap: 10px;
+}
+
+.checkpoint-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #edf2f0;
+}
+
+.checkpoint-late-note {
+  margin: 0;
+  padding: 8px 10px;
+  color: #744f10;
+  background: #fff8e8;
+  border: 1px solid #f1dfb5;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.checkpoint-save {
+  justify-self: start;
+  min-height: 34px;
+  padding: 7px 12px;
+}
+
+.publication-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  color: #23704c;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.publication-view-link:hover {
+  text-decoration: underline;
+}
+
+.analytics-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 34 27 / 48%);
+}
+
+.analytics-archive-modal,
+.analytics-detail-modal {
+  display: grid;
+  width: min(100%, 720px);
+  max-height: min(86vh, 900px);
+  gap: 14px;
+  overflow: hidden;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #dce7e0;
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgb(15 35 25 / 22%);
+}
+
+.analytics-detail-modal {
+  width: min(100%, 600px);
+  overflow-y: auto;
+}
+
+.analytics-modal-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.analytics-modal-heading h2 {
+  margin: 5px 0;
+  color: #243a2e;
+  font-size: 21px;
+}
+
+.analytics-modal-heading p {
+  margin: 0;
+  color: #718078;
+  font-size: 12px;
+}
+
+.analytics-modal-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #53645b;
+  background: #f4f7f5;
+  border: 1px solid #e0e8e3;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.analytics-archive-search {
+  display: flex;
+  gap: 8px;
+}
+
+.analytics-archive-search label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: #78877f;
+  border: 1px solid #d8e2dc;
+  border-radius: 8px;
+}
+
+.analytics-archive-search input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  color: #293b31;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.analytics-publication-list {
+  min-height: 150px;
+  overflow-y: auto;
+  border-top: 1px solid #edf1ee;
+  border-bottom: 1px solid #edf1ee;
+}
+
+.analytics-publication-list-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 5px;
+  color: #33483c;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #edf1ee;
+  cursor: pointer;
+}
+
+.analytics-publication-list-item:hover {
+  background: #f7faf8;
+}
+
+.analytics-publication-list-item span {
+  display: grid;
+  gap: 4px;
+}
+
+.analytics-publication-list-item strong {
+  font-size: 13px;
+}
+
+.analytics-publication-list-item small,
+.analytics-no-results {
+  color: #79877f;
+  font-size: 11px;
+}
+
+.analytics-no-results {
+  padding: 14px 4px;
+}
+
+.analytics-pagination,
+.analytics-pagination > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analytics-pagination > span {
+  color: #718078;
+  font-size: 11px;
+}
+
+.analytics-detail-modal .metric-input-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .metric-input {

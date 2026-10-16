@@ -162,20 +162,68 @@ export function updateDraft(draftId: number, data: { title?: string; body?: stri
   });
 }
 
-export async function uploadDraftImage(draftId: number, file: File): Promise<ContentDraftData> {
+export type DraftImageUploadResult = {
+  draft: ContentDraftData;
+  storage: "supabase" | "local" | "local_fallback" | "unknown";
+  notice: string;
+};
+
+export async function uploadDraftImage(
+  draftId: number,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<DraftImageUploadResult> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE_URL}/api/content/drafts/${draftId}/image`, {
-    method: "POST",
-    body: formData,
+  const { data: { session } } = await supabase.auth.getSession();
+  const xhr = new XMLHttpRequest();
+  const result = new Promise<DraftImageUploadResult>((resolve, reject) => {
+    xhr.open("POST", `${API_BASE_URL}/api/content/drafts/${draftId}/image`);
+    if (session?.access_token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
+    }
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.max(1, Math.min(99, Math.floor((event.loaded / event.total) * 100))));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        let message = `Image upload failed (HTTP ${xhr.status}).`;
+        try {
+          const body = JSON.parse(xhr.responseText) as { detail?: string };
+          if (body.detail) message = body.detail;
+        } catch {
+          // Keep the explicit HTTP error when the response isn't JSON.
+        }
+        reject(new Error(message));
+        return;
+      }
+
+      try {
+        const draft = JSON.parse(xhr.responseText) as ContentDraftData;
+        resolve({
+          draft,
+          storage:
+            (xhr.getResponseHeader("X-Image-Storage") as DraftImageUploadResult["storage"]) ??
+            "unknown",
+          notice:
+            xhr.getResponseHeader("X-Image-Notice") ?? "Image upload completed successfully.",
+        });
+      } catch {
+        reject(new Error("Image was stored, but Canta returned an invalid upload response."));
+      }
+    });
+    xhr.addEventListener("error", () => reject(new Error("Could not reach Canta to upload the image.")));
+    xhr.addEventListener("abort", () => reject(new Error("Image upload was cancelled.")));
+
+    xhr.send(formData);
   });
 
-  if (!response.ok) {
-    throw new Error("Failed to upload image");
-  }
-
-  return response.json() as Promise<ContentDraftData>;
+  return result;
 }
 
 export function publishManual(draftId: number): Promise<ContentDraftData> {

@@ -5,11 +5,12 @@ import re
 import shutil
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -454,7 +455,10 @@ def update_draft(
 
 @router.post("/drafts/{draft_id}/image", response_model=ContentDraftData)
 async def upload_draft_image(
-    draft_id: int, file: UploadFile = File(...), session: Session = Depends(get_db)
+    draft_id: int,
+    response: Response,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_db),
 ) -> ContentDraft:
     draft = session.get(ContentDraft, draft_id)
     if draft is None:
@@ -462,26 +466,62 @@ async def upload_draft_image(
 
     ext = os.path.splitext(file.filename)[1] if file.filename else ".jpg"
     filename = f"{uuid.uuid4()}{ext}"
-    
-    supabase = get_supabase()
-    if supabase:
-        # Upload to Supabase Storage bucket 'images'
-        file_bytes = await file.read()
-        res = supabase.storage.from_("images").upload(
-            path=filename, 
-            file=file_bytes, 
-            file_options={"content-type": file.content_type}
+    file_bytes = await file.read()
+    storage_mode = "supabase"
+    storage_notice = "Image uploaded to Supabase."
+
+    try:
+        supabase = get_supabase()
+    except Exception:
+        logger.exception("Could not initialize Supabase Storage client for image upload.")
+        supabase = None
+        storage_mode = "local_fallback"
+        storage_notice = (
+            "Supabase upload failed; redirecting to local storage. "
+            "Image was saved locally."
         )
-        # Get public URL
-        public_url = supabase.storage.from_("images").get_public_url(filename)
-        draft.image_path = public_url
+
+    if supabase:
+        try:
+            supabase.storage.from_("images").upload(
+                path=filename,
+                file=file_bytes,
+                file_options={"content-type": file.content_type},
+            )
+            draft.image_path = supabase.storage.from_("images").get_public_url(filename)
+        except Exception:
+            logger.exception(
+                "Supabase image upload failed for draft %s; falling back to local storage.",
+                draft.id,
+            )
+            storage_mode = "local_fallback"
+            storage_notice = (
+                "Supabase upload failed; redirecting to local storage. "
+                "Image was saved locally."
+            )
     else:
+        if storage_mode != "local_fallback":
+            storage_mode = "local"
+            storage_notice = (
+                "Supabase is not configured; image was saved to local storage."
+            )
+
+    if storage_mode != "supabase":
         os.makedirs("data/uploads", exist_ok=True)
         filepath = os.path.join("data/uploads", filename)
-        with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        try:
+            await asyncio.to_thread(Path(filepath).write_bytes, file_bytes)
+        except OSError as exc:
+            logger.exception("Could not save draft image to local storage.")
+            raise HTTPException(
+                status_code=500,
+                detail="Image upload failed and the local-storage fallback could not save it.",
+            ) from exc
         draft.image_path = f"/uploads/{filename}"
-    
+
+    response.headers["X-Image-Storage"] = storage_mode
+    response.headers["X-Image-Notice"] = storage_notice
+
     record_audit_event(
         session,
         event_type="content.draft.image_uploaded",

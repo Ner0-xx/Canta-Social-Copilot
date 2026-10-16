@@ -38,8 +38,10 @@ Every public action is gated behind an approval and policy layer. Canta never pu
 - Content calendar with scheduled job management
 
 ### Analytics & Experiments
-- CSV import and manual metric entry for both platforms
-- Performance dashboard with top-performing content insights
+- Per-publication manual metric entry for X and LinkedIn
+- Separate 24-hour, 7-day, 30-day, and 90-day metric checkpoints
+- Performance comparisons limited to matching platforms and checkpoints
+- Searchable, paginated history of all published posts
 - A/B experiment tracking with variant-level metric comparison
 - Automated weekly performance reports powered by AI
 
@@ -130,6 +132,7 @@ This project supports both local development and deployed hosting. Use the split
 | `DATABASE_URL` | PostgreSQL connection string for Supabase or your deployed database |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_KEY` | Supabase anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional, preferred backend-only Storage key. Keep it secret and never expose it to the frontend. When set, Canta uses it for image uploads instead of `SUPABASE_KEY`. |
 | `SUPABASE_JWKS_URL` | Optional URL for the Supabase project's public signing keys; defaults to `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`. Backend access tokens must use ES256 (ECC P-256). |
 | `BACKEND_BASE_URL` | Public base URL of the FastAPI backend, e.g. `http://127.0.0.1:8000` or your Render URL |
 | `FRONTEND_ORIGIN` | Frontend origin used for CORS and redirect handling, e.g. `http://127.0.0.1:5173` or your Vercel URL |
@@ -156,6 +159,12 @@ This project supports both local development and deployed hosting. Use the split
 Before deploying OAuth refresh-token support, set `X_REFRESH_TOKEN_ENCRYPTION_KEY` in the backend environment and run `alembic upgrade head` from the `backend` directory against the configured database. Keep the encryption key stable and backed up: changing or losing it makes saved X refresh tokens unreadable. Then reconnect X once to grant `offline.access` and save a refresh token. Existing X connections do not acquire a refresh token automatically; until reconnected, the app will prompt to reconnect when the access token expires.
 
 The backend verifies Supabase access tokens with the project's published ES256 signing keys. Set `SUPABASE_URL` to the same Supabase project used by the frontend. `SUPABASE_JWKS_URL` is normally left blank so the backend derives the project's JWKS endpoint. When deploying this change, remove the obsolete `SUPABASE_JWT_SECRET` variable from Render, set or confirm `SUPABASE_URL`, and redeploy the backend. No frontend auth environment variable changes are required.
+
+### Supabase image storage
+
+Draft image uploads use the Supabase Storage bucket named `images` when configured. In the Supabase Dashboard, select the project matching the backend's `SUPABASE_URL`, open **Storage**, and create a bucket named exactly `images`. Set it to **Public** because Canta saves a public image URL and later downloads that image for publishing. Configure the bucket's file-size and allowed MIME-type limits to match the images you want to upload.
+
+For reliable server-side uploads, add the project's **service role key** as `SUPABASE_SERVICE_ROLE_KEY` in the backend environment and redeploy. It bypasses Storage row-level security (RLS), so keep it only in the trusted backend environment; never put it in a `VITE_` variable or frontend code. The normal `SUPABASE_KEY` remains the anon/public key used by the app. If you use only that anon key for Storage, Storage RLS must explicitly permit the backend's `anon` role to insert into `images`; an `authenticated`-only policy will not work because the backend Storage client does not forward the user's Supabase access token. Avoid a broad anonymous upload policy on a public project. A failed Supabase upload now falls back to Render's local `data/uploads` storage and the frontend reports that fallback. Render's local filesystem may be ephemeral, so the fallback is for continuity and diagnosis, not durable storage.
 
 ## 🛡️ Safety Model
 

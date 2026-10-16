@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -247,6 +248,50 @@ class PostMetricData(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+MetricCheckpoint = Literal["24h", "7d", "30d", "90d"]
+
+
+class PublicationMetricSnapshotData(BaseModel):
+    checkpoint: MetricCheckpoint
+    impressions: int = Field(ge=0)
+    reactions: int = Field(ge=0)
+    comments: int = Field(ge=0)
+    reposts: int = Field(ge=0)
+    clicks: int = Field(ge=0)
+    recorded_at: datetime
+    is_late: bool
+
+    model_config = {"from_attributes": True}
+
+
+class PublicationMetricsUpdate(BaseModel):
+    checkpoint: MetricCheckpoint
+    impressions: int = Field(ge=0)
+    reactions: int = Field(ge=0)
+    comments: int = Field(ge=0)
+    reposts: int = Field(ge=0)
+    clicks: int = Field(default=0, ge=0)
+
+
+class PublishedPublicationData(BaseModel):
+    publication_id: int
+    draft_id: int
+    platform: str
+    platform_post_id: str
+    platform_post_url: str
+    title: str
+    published_at: datetime
+    metrics: dict[str, PublicationMetricSnapshotData]
+
+
+class PublishedPublicationsPage(BaseModel):
+    items: list[PublishedPublicationData]
+    total: int
+    offset: int
+    limit: int
+
+
 class JobStatusResponse(BaseModel):
     id: int
     draft_id: int
@@ -290,4 +335,3 @@ class WeeklyReportData(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-

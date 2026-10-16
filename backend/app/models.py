@@ -1,6 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -210,6 +221,28 @@ class PlatformPublication(Base):
     platform_post_url: Mapped[str] = mapped_column(String(500), default="")
     status: Mapped[str] = mapped_column(String(32), default="published")
     published_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PublicationMetricSnapshot(Base):
+    __tablename__ = "publication_metric_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "publication_id", "checkpoint", name="uq_publication_metric_checkpoint"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    publication_id: Mapped[int] = mapped_column(
+        ForeignKey("platform_publications.id", ondelete="CASCADE"), index=True
+    )
+    checkpoint: Mapped[str] = mapped_column(String(8))
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    reactions: Mapped[int] = mapped_column(Integer, default=0)
+    comments: Mapped[int] = mapped_column(Integer, default=0)
+    reposts: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    is_late: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class OAuthConnection(Base):

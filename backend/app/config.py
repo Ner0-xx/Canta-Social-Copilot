@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     x_client_secret: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
+    supabase_service_role_key: str = ""
     supabase_jwks_url: str = ""
     x_refresh_token_encryption_key: str = ""
 

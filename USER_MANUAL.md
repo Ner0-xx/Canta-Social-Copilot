@@ -157,8 +157,9 @@ This tab shows dashboard metrics and reports.
 You can:
 
 - review top-performing posts
-- import analytics CSV files
-- manually log recent X post metrics
+- enter metrics separately for each published X and LinkedIn post
+- record or correct numbers at the 24-hour, 7-day, 30-day, and 90-day checkpoints
+- browse the newest 20 posts per platform or search and page through the full publication history
 - track experiments and performance comparisons
 
 ### Engagement Workspace
@@ -278,13 +279,16 @@ The analytics area helps you understand what is working.
 
 Use it to:
 
-- view impressions and engagement totals
+- view impressions and engagement totals for a selected checkpoint and platform
 - inspect top-performing content
-- import analytics CSV files
-- log recent X metrics manually
+- enter metrics separately for each published X and LinkedIn post
+- record or correct numbers at 24-hour, 7-day, 30-day, and 90-day checkpoints
+- browse the newest 20 posts per platform or search and page through the full publication history
 - compare experiment variants
 
-This lets the app learn from what has already performed well and inform future content decisions.
+Checkpoint age is measured from the publication timestamp: 24 hours, 7 days, 30 days (one month), and 90 days. Each checkpoint stores one editable cumulative snapshot per publication. Updating a saved checkpoint replaces its figures and analytics recalculate from the changed values. If figures are first entered after the checkpoint has passed, Canta labels that snapshot as a late entry. If a post is older than 90 days, new figures are stored in its 90-day checkpoint and marked late. Dashboard totals compare only the selected checkpoint; platform can also be filtered so unlike platform results are not mixed.
+
+To add figures, select a post card or open **View all posts**, choose its measurement checkpoint, enter impressions, reactions, comments, reposts, and clicks, then save. Canta links the snapshot directly to that post's publication record and draft. It does not infer results from post text or match imported rows by title. CSV analytics import is no longer used.
 
 ---
 
@@ -321,8 +325,8 @@ Check:
 
 Check:
 
-- CSV import was successful
-- recent posts exist in the source data
+- the post has a publication record in Canta
+- the selected platform and checkpoint have saved metric snapshots
 - the backend API is reachable from the frontend
 
 ### Quality warnings are excessive

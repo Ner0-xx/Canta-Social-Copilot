@@ -296,31 +296,43 @@ def test_manual_x_confirmation_links_draft_and_metrics_without_api_connection(cl
     assert publication["platform_post_url"] == "https://x.com/i/status/123456789"
     assert publication["status"] == "manual_confirmed"
 
-    metrics_response = client.post(
-        "/api/analytics/import/manual",
-        json=[
-            {
-                "platform_post_id": "123456789",
-                "platform": "x",
-                "impressions": 250,
-                "reactions": 20,
-                "comments": 4,
-                "reposts": 3,
-            }
-        ],
+    generator = client.app.dependency_overrides[get_db]()
+    session = next(generator)
+    saved_publication = (
+        session.query(PlatformPublication)
+        .filter_by(draft_id=draft_id, platform_post_id="123456789")
+        .one()
+    )
+    publication_id = saved_publication.id
+    generator.close()
+
+    metrics_response = client.put(
+        f"/api/analytics/publications/{publication_id}/metrics",
+        json={
+            "checkpoint": "24h",
+            "impressions": 250,
+            "reactions": 20,
+            "comments": 4,
+            "reposts": 3,
+            "clicks": 0,
+        },
     )
     assert metrics_response.status_code == 200
-    recent_response = client.get("/api/analytics/recent-publications?platform=x")
+    assert metrics_response.json()["checkpoint"] == "24h"
+    recent_response = client.get("/api/analytics/publications?platform=x")
     assert recent_response.status_code == 200
-    recent_post = recent_response.json()[0]
+    recent_post = recent_response.json()["items"][0]
     assert recent_post["platform_post_id"] == "123456789"
     assert recent_post["platform_post_url"] == "https://x.com/i/status/123456789"
-    assert recent_post["publication_method"] == "manual"
-    assert recent_post["metrics"] == {
+    assert recent_post["metrics"]["24h"] == {
+        "checkpoint": "24h",
         "impressions": 250,
         "reactions": 20,
         "comments": 4,
         "reposts": 3,
+        "clicks": 0,
+        "is_late": False,
+        "recorded_at": recent_post["metrics"]["24h"]["recorded_at"],
     }
 
     duplicate_response = client.post(
